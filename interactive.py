@@ -9,6 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from database.connection import DatabaseManager
 from database.models import Listing
 from datetime import datetime
+from quick_add import quick_add, batch_add, extract_listing_info
+from url_scraper import URLScraper
 
 
 class Colors:
@@ -130,11 +132,12 @@ class RentalScannerApp:
             options = {
                 '1': 'View all listings',
                 '2': 'Search listings',
-                '3': 'Add listing manually',
-                '4': 'Manage favorites',
-                '5': 'View statistics',
-                '6': 'Scan websites (experimental)',
-                '7': 'Database operations',
+                '3': 'Quick add (paste from website)',
+                '4': 'URL scraper (auto-extract from URL)',
+                '5': 'Add listing manually',
+                '6': 'Manage favorites',
+                '7': 'View statistics',
+                '8': 'Database operations',
             }
 
             self.print_menu(options)
@@ -143,11 +146,12 @@ class RentalScannerApp:
             handlers = {
                 '1': self.view_listings,
                 '2': self.search_listings,
-                '3': self.add_listing_manual,
-                '4': self.manage_favorites,
-                '5': self.view_statistics,
-                '6': self.scan_websites,
-                '7': self.database_ops,
+                '3': self.quick_add_mode,
+                '4': self.url_scraper_mode,
+                '5': self.add_listing_manual,
+                '6': self.manage_favorites,
+                '7': self.view_statistics,
+                '8': self.database_ops,
                 '0': self.exit_app
             }
 
@@ -328,28 +332,114 @@ class RentalScannerApp:
         print("    House: -")
         print("    Studio: -")
 
-    def scan_websites(self):
-        """Scan websites for listings"""
+    def quick_add_mode(self):
+        """Quick add mode - paste rental information"""
         self.clear_screen()
-        self.print_header("SCAN WEBSITES")
+        self.print_header("QUICK ADD MODE")
 
-        self.print_info("Note: Web scraping may be blocked by anti-bot measures")
-        self.print_info("This is experimental and may not return actual results")
+        print("\n  Instructions:")
+        print("    1. Visit a rental website (SeLoger, LeBonCoin, etc.)")
+        print("    2. Copy information from the listing")
+        print("    3. Paste it below - the app will extract details")
+        print()
+        print("  Example format: '2BR Paris 11eme, 1500 EUR, 45m2'")
+        print(Colors.HEADER + "-" * 70 + Colors.ENDC)
 
-        choice = self.get_input("\nProceed anyway? (y/N): ")
-        if choice.lower() != 'y':
-            return
+        while True:
+            print()
+            data = self.get_input("Paste rental information (or 'menu' to return): ")
 
-        # Get filters
-        location = self.get_input("Location (default: Paris): ") or "Paris"
-        min_price = self.get_input("Min price (default: 500): ") or "500"
-        max_price = self.get_input("Max price (default: 2500): ") or "2500"
+            if data.lower() in ['menu', 'exit', 'quit', 'back', 'return']:
+                break
 
-        self.print_info("Scanning... (this may take a while)")
+            if not data:
+                continue
 
-        # Would call main.scan_listings here
-        self.print_info("Scanning not yet implemented in this interface")
-        self.print_info("Use: py -3 main.py scan --location Paris")
+            # Try to extract information
+            listing = extract_listing_info(data)
+
+            if listing:
+                print()
+                print(f"  {Colors.OKGREEN}[FOUND]{Colors.ENDC} {listing['title']}")
+                print(f"    Price: {listing['price']} EUR")
+                print(f"    Area: {listing['area']} m2")
+                print(f"    Location: {listing['location']}")
+
+                # Ask to confirm
+                confirm = self.get_input("\n  Add this listing? (Y/n): ").lower()
+
+                if confirm == 'y':
+                    result = self.db.add_listing(listing)
+                    if result:
+                        self.print_success("Listing added!")
+                    else:
+                        self.print_error("Failed to add")
+                else:
+                    self.print_info("Not added")
+            else:
+                self.print_info("Could not extract details. Please try manual entry")
+
+    def url_scraper_mode(self):
+        """URL scraper mode - extract data from URLs"""
+        self.clear_screen()
+        self.print_header("URL SCRAPER MODE")
+
+        print("\n  Paste rental listing URLs and I'll extract the data!")
+        print()
+        print("  Supported:")
+        print("    - SeLoger.fr")
+        print("    - LeBonCoin.fr")
+        print("    - Most French rental websites")
+        print(Colors.HEADER + "-" * 70 + Colors.ENDC)
+
+        scraper = URLScraper()
+
+        while True:
+            print()
+            url = self.get_input("Paste URL (or 'menu' to return): ")
+
+            if url.lower() in ['menu', 'exit', 'quit', 'back', 'return']:
+                break
+
+            if not url:
+                continue
+
+            if not url.startswith('http'):
+                self.print_error("Invalid URL. Must start with http:// or https://")
+                continue
+
+            # Scrape the URL
+            self.print_info("Fetching URL...")
+            listing = scraper.scrape_url(url)
+
+            if listing and listing['price'] > 0:
+                print()
+                print(f"  {Colors.OKGREEN}[SUCCESS]{Colors.ENDC} Found listing!")
+                print(f"    Title: {listing['title']}")
+                print(f"    Price: {listing['price']} EUR")
+                print(f"    Area: {listing['area']} m2")
+                print(f"    Location: {listing['location']}")
+
+                # Show features
+                if listing['features']:
+                    print("    Features:")
+                    for feature in listing['features'][:5]:
+                        print(f"      - {feature}")
+
+                # Ask to confirm
+                confirm = self.get_input("\n  Add to database? (Y/n): ").lower()
+
+                if confirm == 'y':
+                    result = self.db.add_listing(listing)
+                    if result:
+                        self.print_success("Listing added to database!")
+                    else:
+                        self.print_error("Failed to add")
+                else:
+                    self.print_info("Not added")
+            else:
+                self.print_info("Could not extract data. Website may be blocking scrapers")
+                self.print_info("Try manual entry instead")
 
     def database_ops(self):
         """Database operations"""
