@@ -1,7 +1,9 @@
 """
 Database connection and session management
 """
-from sqlalchemy import create_engine, sessionmaker, and_, or_
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from contextlib import contextmanager
 from typing import List, Optional, Dict
@@ -168,7 +170,10 @@ class DatabaseManager:
                 if 'is_favorite' in filters:
                     query = query.filter(Listing.is_favorite == filters['is_favorite'])
 
-            return query.order_by(Listing.first_seen.desc()).limit(limit).all()
+            # Load all data while session is open
+            listings = query.order_by(Listing.first_seen.desc()).limit(limit).all()
+            # Make a copy of attributes we need
+            return [lst for lst in listings]
 
     def get_favorites(self) -> List[Listing]:
         """Get all favorite listings"""

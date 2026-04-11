@@ -39,7 +39,7 @@ class BaseScraper(ABC):
             try:
                 response = self.session.get(url, timeout=10)
                 response.raise_for_status()
-                return BeautifulSoup(response.content, 'lxml')
+                return BeautifulSoup(response.content, 'html.parser')
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} failed for {url}: {e}")
                 if attempt < retry - 1:
