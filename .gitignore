@@ -65,3 +65,6 @@ data/
 exports/
 *.csv
 *.xlsx
+
+# Release builds
+release/
