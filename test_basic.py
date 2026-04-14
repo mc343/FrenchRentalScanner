@@ -10,6 +10,7 @@ def test_imports():
     print("[*] Testing imports...")
     try:
         from scraper.base import BaseScraper
+        from scraper.bienici import BieniciScraper
         from scraper.seloger import SeLogerScraper
         from scraper.leboncoin import LeBonCoinScraper
         from database.models import Base, Listing
@@ -80,8 +81,14 @@ def test_scraper_init():
     """Test scraper initialization"""
     print("\n[*] Testing scrapers...")
     try:
+        from scraper.bienici import BieniciScraper
         from scraper.seloger import SeLogerScraper
         from scraper.leboncoin import LeBonCoinScraper
+
+        bienici = BieniciScraper()
+        print("    [OK] Bien'ici scraper initialized")
+        print(f"       Name: {bienici.name}")
+        print(f"       Base URL: {bienici.BASE_URL}")
 
         seloger = SeLogerScraper()
         print("    [OK] SeLoger scraper initialized")
@@ -146,8 +153,8 @@ def main_test():
         print("\n[SUCCESS] All tests passed!")
         print("\nThe tool is ready to use!")
         print("\nNext steps:")
-        print("1. Test with real data: py -3 main.py scan --location Paris")
-        print("2. Launch dashboard: py -3 main.py dashboard")
+        print("1. Test with real data: python main.py scan --location Huningue")
+        print("2. Launch dashboard: python main.py dashboard")
         return True
     else:
         print("\n[WARNING] Some tests failed. Please fix the errors above.")

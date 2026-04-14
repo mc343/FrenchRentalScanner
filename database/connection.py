@@ -1,7 +1,8 @@
 """
 Database connection and session management
 """
-from sqlalchemy import create_engine
+from datetime import datetime, date
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
@@ -29,13 +30,34 @@ class DatabaseManager:
         self.SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,
-            bind=self.engine
+            bind=self.engine,
+            expire_on_commit=False
         )
         self.init_db()
 
     def init_db(self):
         """Create all tables if they don't exist"""
         Base.metadata.create_all(bind=self.engine)
+        self._ensure_schema_updates()
+
+    def _ensure_schema_updates(self):
+        """Apply lightweight schema updates for SQLite installations."""
+        inspector = inspect(self.engine)
+        columns = {column['name'] for column in inspector.get_columns('listings')}
+
+        with self.engine.begin() as connection:
+            if 'available_date' not in columns:
+                connection.execute(text("ALTER TABLE listings ADD COLUMN available_date DATETIME"))
+            if 'last_refreshed' not in columns:
+                connection.execute(text("ALTER TABLE listings ADD COLUMN last_refreshed DATETIME"))
+            if 'is_hidden' not in columns:
+                connection.execute(text("ALTER TABLE listings ADD COLUMN is_hidden BOOLEAN DEFAULT 0"))
+            if 'needs_review' not in columns:
+                connection.execute(text("ALTER TABLE listings ADD COLUMN needs_review BOOLEAN DEFAULT 1"))
+            if 'personal_rating' not in columns:
+                connection.execute(text("ALTER TABLE listings ADD COLUMN personal_rating INTEGER"))
+            if 'review_notes' not in columns:
+                connection.execute(text("ALTER TABLE listings ADD COLUMN review_notes TEXT"))
 
     @contextmanager
     def get_session(self):
@@ -71,14 +93,13 @@ class DatabaseManager:
 
                 if existing:
                     # Update existing listing
-                    for key, value in listing_data.items():
-                        if hasattr(existing, key):
-                            setattr(existing, key, value)
+                    self._merge_listing(existing, listing_data)
                     existing.last_seen = datetime.now()
                     session.commit()
                     return existing
                 else:
                     # Create new listing
+                    listing_data = self._prepare_new_listing(listing_data)
                     listing = Listing(**listing_data)
                     session.add(listing)
                     session.commit()
@@ -108,11 +129,10 @@ class DatabaseManager:
                     ).first()
 
                     if existing:
-                        for key, value in listing_data.items():
-                            if hasattr(existing, key):
-                                setattr(existing, key, value)
+                        self._merge_listing(existing, listing_data)
                         existing.last_seen = datetime.now()
                     else:
+                        listing_data = self._prepare_new_listing(listing_data)
                         listing = Listing(**listing_data)
                         session.add(listing)
 
@@ -142,6 +162,7 @@ class DatabaseManager:
         """
         with self.get_session() as session:
             query = session.query(Listing).filter(Listing.is_available == True)
+            query = query.filter(Listing.is_hidden == False)
 
             if filters:
                 # Price filter
@@ -169,9 +190,49 @@ class DatabaseManager:
                 # Status filter
                 if 'is_favorite' in filters:
                     query = query.filter(Listing.is_favorite == filters['is_favorite'])
+                if 'source' in filters and filters['source']:
+                    query = query.filter(Listing.source == filters['source'])
+                if 'sources' in filters and filters['sources']:
+                    query = query.filter(Listing.source.in_(filters['sources']))
+                if 'contacted' in filters:
+                    query = query.filter(Listing.contacted == filters['contacted'])
+                if 'needs_review' in filters:
+                    query = query.filter(Listing.needs_review == filters['needs_review'])
+                if 'min_rating' in filters and filters['min_rating'] is not None:
+                    query = query.filter(Listing.personal_rating.is_not(None))
+                    query = query.filter(Listing.personal_rating >= filters['min_rating'])
+                if 'seen_after' in filters and filters['seen_after']:
+                    query = query.filter(Listing.first_seen >= filters['seen_after'])
+
+                if 'available_by' in filters and filters['available_by']:
+                    value = filters['available_by']
+                    if isinstance(value, datetime):
+                        cutoff = value
+                    elif isinstance(value, date):
+                        cutoff = datetime.combine(value, datetime.min.time())
+                    else:
+                        cutoff = value
+                    query = query.filter(Listing.available_date.is_not(None))
+                    query = query.filter(Listing.available_date <= cutoff)
+
+                if filters.get('available_now_only'):
+                    query = query.filter(Listing.available_date.is_not(None))
+                    query = query.filter(Listing.available_date <= datetime.now())
 
             # Load all data while session is open
-            listings = query.order_by(Listing.first_seen.desc()).limit(limit).all()
+            sort_by = filters.get('sort_by') if filters else None
+            if sort_by == 'price_asc':
+                query = query.order_by(Listing.price.asc(), Listing.first_seen.desc())
+            elif sort_by == 'price_desc':
+                query = query.order_by(Listing.price.desc(), Listing.first_seen.desc())
+            elif sort_by == 'area_desc':
+                query = query.order_by(Listing.area.desc(), Listing.first_seen.desc())
+            elif sort_by == 'available_date_asc':
+                query = query.order_by(Listing.available_date.asc().nullslast(), Listing.first_seen.desc())
+            else:
+                query = query.order_by(Listing.first_seen.desc())
+
+            listings = query.limit(limit).all()
             # Make a copy of attributes we need
             return [lst for lst in listings]
 
@@ -205,9 +266,102 @@ class DatabaseManager:
             listing = session.query(Listing).filter(Listing.id == listing_id).first()
             if listing:
                 listing.contacted = True
+                listing.needs_review = False
                 session.commit()
                 return True
         return False
+
+    def toggle_hidden(self, listing_id: int) -> bool:
+        """Toggle hidden/rejected status."""
+        with self.get_session() as session:
+            listing = session.query(Listing).filter(Listing.id == listing_id).first()
+            if listing:
+                listing.is_hidden = not listing.is_hidden
+                listing.needs_review = False if listing.is_hidden else listing.needs_review
+                session.commit()
+                return listing.is_hidden
+        return False
+
+    def toggle_needs_review(self, listing_id: int) -> bool:
+        """Toggle needs-review flag."""
+        with self.get_session() as session:
+            listing = session.query(Listing).filter(Listing.id == listing_id).first()
+            if listing:
+                listing.needs_review = not listing.needs_review
+                session.commit()
+                return listing.needs_review
+        return False
+
+    def update_review(self, listing_id: int, rating: int = None, notes: str = None) -> bool:
+        """Update personal review fields for a listing."""
+        with self.get_session() as session:
+            listing = session.query(Listing).filter(Listing.id == listing_id).first()
+            if not listing:
+                return False
+
+            if rating is not None:
+                listing.personal_rating = rating
+            if notes is not None:
+                listing.review_notes = notes
+            listing.needs_review = False
+            session.commit()
+            return True
+
+    def reconcile_source_city_inventory(self, source: str, city: str, active_listing_ids: List[str]) -> int:
+        """Mark listings unavailable when they no longer appear in the latest scan for a source/city."""
+        with self.get_session() as session:
+            query = session.query(Listing).filter(
+                Listing.source == source,
+                Listing.city.ilike(city),
+            )
+            listings = query.all()
+            active_set = {listing_id for listing_id in active_listing_ids if listing_id}
+            changed = 0
+            for listing in listings:
+                should_be_available = listing.listing_id in active_set
+                if listing.is_available != should_be_available:
+                    listing.is_available = should_be_available
+                    changed += 1
+            session.commit()
+            return changed
+
+    def _prepare_new_listing(self, listing_data: Dict) -> Dict:
+        """Prepare new listing payload with sane defaults."""
+        payload = dict(listing_data)
+        payload.setdefault('needs_review', True)
+        payload.setdefault('is_hidden', False)
+        payload.setdefault('is_available', True)
+        payload.setdefault('first_seen', datetime.now())
+        payload.setdefault('last_seen', datetime.now())
+        payload.setdefault('last_refreshed', datetime.now())
+        return payload
+
+    def _merge_listing(self, existing: Listing, listing_data: Dict):
+        """Merge scraped listing data without clobbering user review state."""
+        preserved_fields = {
+            'is_favorite',
+            'contacted',
+            'viewing_scheduled',
+            'is_hidden',
+            'needs_review',
+            'personal_rating',
+            'review_notes',
+            'first_seen',
+        }
+
+        for key, value in listing_data.items():
+            if not hasattr(existing, key) or key in preserved_fields:
+                continue
+            setattr(existing, key, value)
+
+        existing.last_refreshed = datetime.now()
+        existing.is_available = True
+
+        if existing.is_hidden:
+            return
+
+        if not existing.contacted and not existing.is_favorite and not existing.review_notes and existing.personal_rating is None:
+            existing.needs_review = True
 
     def add_search_history(self, search_name: str, filters: Dict, results_count: int) -> SearchHistory:
         """Add search to history"""
@@ -226,25 +380,30 @@ class DatabaseManager:
     def get_stats(self) -> Dict:
         """Get database statistics"""
         with self.get_session() as session:
-            total = session.query(Listing).count()
+            total = session.query(Listing).filter(Listing.is_available == True).count()
+            archived = session.query(Listing).count()
             favorites = session.query(Listing).filter(Listing.is_favorite == True).count()
             available = session.query(Listing).filter(Listing.is_available == True).count()
 
             return {
                 'total_listings': total,
+                'archived_listings': archived,
                 'favorites': favorites,
                 'available': available,
-                'sources': self._count_by_source(session)
+                'sources': self._count_by_source(session, active_only=True),
+                'with_available_date': session.query(Listing).filter(Listing.is_available == True, Listing.available_date.is_not(None)).count(),
+                'needs_review': session.query(Listing).filter(Listing.is_available == True, Listing.needs_review == True, Listing.is_hidden == False).count(),
+                'hidden': session.query(Listing).filter(Listing.is_hidden == True).count()
             }
 
-    def _count_by_source(self, session) -> Dict:
+    def _count_by_source(self, session, active_only: bool = False) -> Dict:
         """Count listings by source"""
         from sqlalchemy import func
-        results = session.query(
+        query = session.query(
             Listing.source,
             func.count(Listing.id)
-        ).group_by(Listing.source).all()
+        )
+        if active_only:
+            query = query.filter(Listing.is_available == True)
+        results = query.group_by(Listing.source).all()
         return {source: count for source, count in results}
-
-
-from datetime import datetime

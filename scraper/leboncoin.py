@@ -30,6 +30,7 @@ class LeBonCoinScraper(BaseScraper):
         """
         logger.info(f"Searching LeBonCoin with filters: {filters}")
 
+        self.last_error = None
         listings = []
         page = 1
         max_pages = 5
@@ -108,6 +109,7 @@ class LeBonCoinScraper(BaseScraper):
             response.raise_for_status()
             return response.json()
         except Exception as e:
+            self.last_error = str(e)
             logger.error(f"API request failed: {e}")
             return {}
 
@@ -124,7 +126,7 @@ class LeBonCoinScraper(BaseScraper):
                     'source': self.name,
                     'url': ad.get('url', ''),
                     'title': ad.get('subject', ''),
-                    'price': ad.get('price', {}).get('price', [0])[0] if ad.get('price') else 0,
+                    'price': self._extract_price_from_dict(ad),
                     'area': self._extract_area_from_dict(ad),
                     'location': self._extract_location_from_dict(ad),
                     'description': ad.get('body', ''),
@@ -132,11 +134,21 @@ class LeBonCoinScraper(BaseScraper):
                     'features': self._extract_features_from_dict(ad),
                     'listing_id': ad.get('list_id', ''),
                     'publication_date': ad.get('publication_date', ''),
+                    'property_type': self._extract_property_type(ad),
+                    'rooms': self._extract_numeric_attribute(ad, {'rooms', 'rooms_number'}),
+                    'bedrooms': self._extract_numeric_attribute(ad, {'bedrooms', 'bedrooms_number'}),
+                    'furnished': self._extract_boolean_attribute(ad, {'furnished'}),
                     'is_urgent': ad.get('urgent', False)
                 }
 
+                availability_text = " ".join(
+                    part for part in [listing['title'], listing['description'], " ".join(listing['features'])]
+                    if part
+                )
+                listing['available_date'] = self.extract_available_date(availability_text)
+
                 if listing['url']:
-                    listings.append(listing)
+                    listings.append(self.normalize_listing_data(listing))
 
             except Exception as e:
                 logger.warning(f"Error parsing API listing: {e}")
@@ -146,20 +158,30 @@ class LeBonCoinScraper(BaseScraper):
 
     def _extract_area_from_dict(self, ad: Dict) -> float:
         """Extract area from API data"""
-        attributes = ad.get('attributes', {}) or {}
-        if isinstance(attributes, list):
-            for attr in attributes:
-                if attr.get('key') == 'square':
-                    return float(attr.get('value', 0))
+        return self._extract_numeric_attribute(ad, {'square', 'living_area'}) or 0.0
+
+    def _extract_price_from_dict(self, ad: Dict) -> float:
+        """Extract price from API data."""
+        price = ad.get('price')
+        if isinstance(price, dict):
+            values = price.get('price', [])
+            if isinstance(values, list) and values:
+                return float(values[0] or 0)
+        if isinstance(price, (int, float)):
+            return float(price)
         return 0.0
 
     def _extract_location_from_dict(self, ad: Dict) -> str:
         """Extract location from API data"""
         location = ad.get('location', {}) or {}
         city = location.get('city', {})
+        zipcode = location.get('zipcode') or location.get('zip_code') or ''
         if isinstance(city, dict):
-            return city.get('name', '')
-        return str(city) if city else ''
+            city_name = city.get('name', '')
+        else:
+            city_name = str(city) if city else ''
+        pieces = [part for part in [city_name, zipcode] if part]
+        return " ".join(pieces)
 
     def _extract_images_from_dict(self, ad: Dict) -> List[str]:
         """Extract image URLs from API data"""
@@ -179,9 +201,10 @@ class LeBonCoinScraper(BaseScraper):
             for attr in attributes:
                 if isinstance(attr, dict):
                     key = attr.get('key', '')
-                    value = attr.get('value', '')
+                    value = attr.get('value_label') or attr.get('value', '')
                     if key and value:
-                        features.append(f"{key}: {value}")
+                        label = attr.get('label') or key.replace('_', ' ')
+                        features.append(f"{label}: {value}")
 
         return features
 
@@ -208,11 +231,56 @@ class LeBonCoinScraper(BaseScraper):
         return {
             'url': ad_data.get('url', ''),
             'title': ad_data.get('subject', ''),
-            'body': ad_data.get('body', ''),
-            'price': ad_data.get('price', 0),
-            'location': ad_data.get('location', {}),
-            'images': ad_data.get('images', {}).get('urls', {}),
-            'attributes': ad_data.get('attributes', []),
-            'contact_phone': ad_data.get('phone', ''),
-            'contact_name': ad_data.get('owner', {}).get('name', '')
+            'description': ad_data.get('body', ''),
+            'price': self._extract_price_from_dict(ad_data),
+            'location': self._extract_location_from_dict(ad_data),
+            'images': self._extract_images_from_dict(ad_data),
+            'features': self._extract_features_from_dict(ad_data),
+            'property_type': self._extract_property_type(ad_data),
+            'rooms': self._extract_numeric_attribute(ad_data, {'rooms', 'rooms_number'}),
+            'bedrooms': self._extract_numeric_attribute(ad_data, {'bedrooms', 'bedrooms_number'}),
+            'furnished': self._extract_boolean_attribute(ad_data, {'furnished'}),
+            'contact_info': {
+                'phone': ad_data.get('phone', ''),
+                'name': ad_data.get('owner', {}).get('name', '')
+            }
         }
+
+    def _extract_property_type(self, ad: Dict) -> str:
+        """Extract property type from API data."""
+        raw = self._extract_attribute_value(ad, {'real_estate_type', 'type'})
+        mapping = {
+            'flat': 'apartment',
+            'appartement': 'apartment',
+            'apartment': 'apartment',
+            'house': 'house',
+            'maison': 'house',
+            'studio': 'studio',
+        }
+        return mapping.get(str(raw).lower(), '')
+
+    def _extract_numeric_attribute(self, ad: Dict, keys: set) -> float:
+        """Extract numeric attribute from API data."""
+        value = self._extract_attribute_value(ad, keys)
+        if value in (None, ''):
+            return 0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def _extract_boolean_attribute(self, ad: Dict, keys: set) -> bool:
+        """Extract boolean-like attribute from API data."""
+        value = self._extract_attribute_value(ad, keys)
+        if isinstance(value, bool):
+            return value
+        return str(value).lower() in {'1', 'true', 'yes', 'oui'}
+
+    def _extract_attribute_value(self, ad: Dict, keys: set):
+        """Extract raw attribute value from LeBonCoin API data."""
+        attributes = ad.get('attributes', []) or []
+        if isinstance(attributes, list):
+            for attr in attributes:
+                if isinstance(attr, dict) and attr.get('key') in keys:
+                    return attr.get('value')
+        return None

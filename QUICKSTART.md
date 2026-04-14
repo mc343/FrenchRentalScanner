@@ -10,7 +10,7 @@ Double-click: RUN.bat
 ### Option 2: Command Line
 ```bash
 cd FrenchRentalScanner
-py -3 interactive.py
+python interactive.py
 ```
 
 ---
@@ -119,20 +119,20 @@ Total: 4 listings
 
 ### Application won't start:
 ```bash
-py -3 interactive.py
+python interactive.py
 ```
 
 ### Database issues:
 ```bash
 # Check database
-py -3 run_test.py
+python run_test.py
 ```
 
 ### Reset everything:
 ```bash
 # Delete database and start fresh
 del rental_listings.db
-py -3 run_test.py
+python run_test.py
 ```
 
 ---

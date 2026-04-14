@@ -2,6 +2,7 @@
 SeLoger.fr scraper - One of France's largest rental websites
 """
 from typing import List, Dict
+from urllib.parse import urljoin
 from .base import BaseScraper, logger
 import re
 
@@ -86,7 +87,9 @@ class SeLogerScraper(BaseScraper):
         listings = []
 
         # SeLoger listing cards (adjust selectors based on actual HTML)
-        listing_cards = soup.find_all('div', class_='ListingContainer')
+        listing_cards = soup.select(
+            'div.ListingContainer, article[data-testid="listing-card"], article[class*="listing-card"]'
+        )
 
         for card in listing_cards:
             try:
@@ -102,8 +105,14 @@ class SeLogerScraper(BaseScraper):
                     'features': self._extract_features(card)
                 }
 
+                availability_text = " ".join(
+                    part for part in [listing['title'], listing['description'], " ".join(listing['features'])]
+                    if part
+                )
+                listing['available_date'] = self.extract_available_date(availability_text)
+
                 if listing['url']:
-                    listings.append(listing)
+                    listings.append(self.normalize_listing_data(listing))
 
             except Exception as e:
                 logger.warning(f"Error parsing listing card: {e}")
@@ -113,56 +122,94 @@ class SeLogerScraper(BaseScraper):
 
     def _extract_url(self, card) -> str:
         """Extract listing URL"""
-        link = card.find('a', class_='CartoSummary__link')
-        if link:
-            return link.get('href', '')
+        selectors = [
+            'a.CartoSummary__link',
+            'a[data-testid="sl.explore.coveringLink"]',
+            'a[href*="/annonces/"]',
+            'a[href*="/locations/"]',
+        ]
+        for selector in selectors:
+            link = card.select_one(selector)
+            if link and link.get('href'):
+                return urljoin(self.BASE_URL, link.get('href'))
         return ''
 
     def _extract_title(self, card) -> str:
         """Extract listing title"""
-        title_elem = card.find('div', class_='ListingContainer__title')
-        return self.clean_text(title_elem.text) if title_elem else ''
+        selectors = [
+            'div.ListingContainer__title',
+            '[data-testid="sl.title"]',
+            'h2',
+            'h3',
+        ]
+        return self._extract_text_by_selectors(card, selectors)
 
     def _extract_price(self, card) -> float:
         """Extract price"""
-        price_elem = card.find('div', class_='ListingContainer__price')
-        if price_elem:
-            return self.extract_price(price_elem.text)
-        return 0.0
+        selectors = [
+            'div.ListingContainer__price',
+            '[data-testid="sl.price"]',
+            '[class*="price"]',
+        ]
+        price_text = self._extract_text_by_selectors(card, selectors)
+        return self.extract_price(price_text or card.get_text(" ", strip=True)) or 0.0
 
     def _extract_area(self, card) -> float:
         """Extract area"""
-        area_elem = card.find('div', class_='ListingContainer__surface')
-        if area_elem:
-            return self.extract_area(area_elem.text)
-        return 0.0
+        selectors = [
+            'div.ListingContainer__surface',
+            '[data-testid="sl.surface"]',
+            '[class*="surface"]',
+        ]
+        area_text = self._extract_text_by_selectors(card, selectors)
+        return self.extract_area(area_text or card.get_text(" ", strip=True)) or 0.0
 
     def _extract_location(self, card) -> str:
         """Extract location"""
-        loc_elem = card.find('div', class_='ListingContainer__location')
-        return self.clean_text(loc_elem.text) if loc_elem else ''
+        selectors = [
+            'div.ListingContainer__location',
+            '[data-testid="sl.location"]',
+            '[class*="location"]',
+            '[class*="address"]',
+        ]
+        return self._extract_text_by_selectors(card, selectors)
 
     def _extract_description(self, card) -> str:
         """Extract description"""
-        desc_elem = card.find('div', class_='ListingContainer__description')
-        return self.clean_text(desc_elem.text) if desc_elem else ''
+        selectors = [
+            'div.ListingContainer__description',
+            '[data-testid="sl.description"]',
+            '[class*="description"]',
+            'p',
+        ]
+        return self._extract_text_by_selectors(card, selectors)
 
     def _extract_images(self, card) -> List[str]:
         """Extract image URLs"""
         images = []
-        img_elems = card.find_all('img', class_='ListingContainer__image')
+        img_elems = card.select('img')
         for img in img_elems:
-            src = img.get('data-src') or img.get('src')
+            src = img.get('data-src') or img.get('src') or img.get('data-lazy')
             if src:
-                images.append(src)
+                images.append(urljoin(self.BASE_URL, src))
+            srcset = img.get('srcset')
+            if srcset:
+                for candidate in srcset.split(','):
+                    image_url = candidate.strip().split(' ')[0]
+                    if image_url:
+                        images.append(urljoin(self.BASE_URL, image_url))
         return images
 
     def _extract_features(self, card) -> List[str]:
         """Extract features/amenities"""
         features = []
-        feature_elems = card.find_all('div', class_='ListingContainer__feature')
+        feature_elems = card.select(
+            'div.ListingContainer__feature, [data-testid="sl.tags"] *, [class*="feature"], li, span'
+        )
         for feat in feature_elems:
-            features.append(self.clean_text(feat.text))
+            feature_text = self.clean_text(feat.get_text(" ", strip=True))
+            if feature_text and len(feature_text) < 80:
+                features.append(feature_text)
         return features
 
     def parse_listing(self, url: str) -> Dict:
@@ -197,3 +244,13 @@ class SeLogerScraper(BaseScraper):
         """Parse full description text"""
         desc_elem = soup.find('div', class_='Description__text')
         return self.clean_text(desc_elem.text) if desc_elem else ''
+
+    def _extract_text_by_selectors(self, node, selectors: List[str]) -> str:
+        """Return the first non-empty text found from a selector list."""
+        for selector in selectors:
+            element = node.select_one(selector)
+            if element:
+                text = self.clean_text(element.get_text(" ", strip=True))
+                if text:
+                    return text
+        return ''

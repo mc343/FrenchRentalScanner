@@ -47,11 +47,17 @@ class Listing(Base):
     is_favorite = Column(Boolean, default=False, index=True)
     viewing_scheduled = Column(Boolean, default=False)
     contacted = Column(Boolean, default=False)
+    is_hidden = Column(Boolean, default=False, index=True)
+    needs_review = Column(Boolean, default=True, index=True)
+    personal_rating = Column(Integer)
+    review_notes = Column(Text)
 
     # Timestamps
     first_seen = Column(DateTime, default=datetime.now, index=True)
     last_seen = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     publication_date = Column(DateTime)
+    available_date = Column(DateTime)
+    last_refreshed = Column(DateTime)
     date_updated = Column(DateTime)
 
     def __repr__(self):
@@ -76,6 +82,12 @@ class Listing(Base):
             'is_favorite': self.is_favorite,
             'viewing_scheduled': self.viewing_scheduled,
             'contacted': self.contacted,
+            'is_hidden': self.is_hidden,
+            'needs_review': self.needs_review,
+            'personal_rating': self.personal_rating,
+            'review_notes': self.review_notes,
+            'available_date': self.available_date.isoformat() if self.available_date else None,
+            'last_refreshed': self.last_refreshed.isoformat() if self.last_refreshed else None,
             'first_seen': self.first_seen.isoformat() if self.first_seen else None,
             'last_seen': self.last_seen.isoformat() if self.last_seen else None
         }

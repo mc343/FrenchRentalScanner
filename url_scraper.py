@@ -9,17 +9,15 @@ from database.connection import DatabaseManager
 import requests
 from bs4 import BeautifulSoup
 import re
+from scraper.base import BaseScraper
 
 
-class URLScraper:
+class URLScraper(BaseScraper):
     """Scrapes rental data from URLs"""
 
     def __init__(self):
+        super().__init__()
         self.db = DatabaseManager("rental_listings.db")
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
 
     def scrape_url(self, url):
         """Scrape data from a rental listing URL"""
@@ -46,12 +44,25 @@ class URLScraper:
                 'features': self.extract_features(soup),
                 'images': self.extract_images(soup)
             }
+            availability_text = " ".join(
+                part for part in [listing['title'], listing['description'], " ".join(listing['features'])]
+                if part
+            )
+            listing['available_date'] = self.extract_available_date(availability_text)
 
-            return listing
+            return self.normalize_listing_data(listing)
 
         except Exception as e:
             print(f"[ERROR] Failed to scrape URL: {e}")
             return None
+
+    def search(self, filters):
+        """URL scraper does not support search mode."""
+        raise NotImplementedError("URLScraper does not support search")
+
+    def parse_listing(self, url):
+        """URL scraper does not support direct parse_listing."""
+        raise NotImplementedError("Use scrape_url instead")
 
     def detect_source(self, url):
         """Detect the source website from URL"""
