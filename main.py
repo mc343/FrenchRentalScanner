@@ -176,6 +176,12 @@ def main():
         help="Property type (default: all)",
     )
     parser.add_argument(
+        "--available-within",
+        type=int,
+        default=None,
+        help="Only include listings available within N days (e.g., 90 for 3 months, 120 for 4 months)",
+    )
+    parser.add_argument(
         "--sources",
         nargs="+",
         default=ACTIVE_SOURCES,

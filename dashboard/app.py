@@ -227,6 +227,8 @@ AVAILABILITY_FILTERS = {
     "Within 14 days": 14,
     "Within 30 days": 30,
     "Within 60 days": 60,
+    "Within 3 months": 90,
+    "Within 4 months": 120,
 }
 
 RECENCY_FILTERS = {
@@ -932,6 +934,8 @@ def build_filters(sidebar_defaults):
             "Within 14 days": "14天内",
             "Within 30 days": "30天内",
             "Within 60 days": "60天内",
+            "Within 3 months": "3个月内",
+            "Within 4 months": "4个月内",
         }.get(v, v))
         recency_window = st.selectbox("收录时间", list(RECENCY_FILTERS.keys()), format_func=lambda v: {
             "All listings": "全部房源",

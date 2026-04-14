@@ -48,6 +48,12 @@
 - Only updates new or changed listings
 - Removes listings that are no longer available
 
+### 📅 **Availability Filtering** 🆕
+- Filter by move-in date availability
+- Options from "immediately" to "within 4 months"
+- Perfect for planning ahead or urgent moves
+- Smart extraction of availability dates from listing descriptions
+
 ### 💾 **Database Storage**
 - SQLite database (no setup required)
 - Track favorites, viewing notes, contact history
@@ -119,6 +125,37 @@ The dashboard will open at `http://localhost:8501`
 
 ---
 
+## 🎯 Easy Launcher (Windows Users) 🆕
+
+**For non-technical users, we've created an easy one-click launcher!**
+
+### Option 1: Quick Launch (.bat file)
+
+Simply double-click `RUN_DASHBOARD.bat` and the app will:
+1. ✅ Check if Python is installed
+2. ✅ Install missing dependencies automatically
+3. ✅ Launch the dashboard in your browser
+4. ✅ Handle any errors gracefully
+
+**No technical knowledge required!**
+
+### Option 2: Desktop Shortcut
+
+1. Double-click `CREATE_SHORTCUT.bat`
+2. A shortcut will appear on your desktop
+3. Double-click the shortcut anytime to launch the app
+
+**Perfect for everyday use!**
+
+### What the launcher does:
+- Checks Python installation (guides you if missing)
+- Verifies all required packages
+- Installs missing dependencies automatically
+- Opens dashboard in your default browser
+- Provides helpful error messages if something goes wrong
+
+---
+
 ## 💻 Usage
 
 ### Command Line Interface
@@ -144,6 +181,7 @@ python main.py dashboard
 | `--min-area` | Minimum area (m²) | 20 |
 | `--max-area` | Maximum area (m²) | 100 |
 | `--type` | Property type | all |
+| `--available-within` | Only include listings available within N days 🆕 | None |
 
 ### Dashboard Features
 
