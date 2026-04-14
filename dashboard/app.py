@@ -382,6 +382,43 @@ def format_area(value):
     return f"{value:.0f} m2"
 
 
+def get_transport_distance_indicator(listing):
+    """Get public transportation distance indicator with emoji and color coding."""
+    if not listing or not listing.location:
+        return None
+
+    location_lower = str(listing.location or "").lower()
+    city_lower = str(listing.city or "").lower()
+
+    # Get Basel SBB commute time
+    basel_time = BASEL_SBB_TRANSIT_MINUTES_V2.get(city_lower, None)
+    if not basel_time:
+        # Try to match from location string
+        for key, time in BASEL_SBB_TRANSIT_MINUTES_V2.items():
+            if key in location_lower:
+                basel_time = time
+                break
+
+    if not basel_time:
+        return None
+
+    # Color coding based on distance
+    if basel_time <= 15:
+        distance_emoji = "🚇"
+        color_class = "🟢"  # Excellent
+        distance_text = f"{distance_emoji} {color_class} 到Basel SBB: {basel_time}分钟"
+    elif basel_time <= 25:
+        distance_emoji = "🚇"
+        color_class = "🟡"  # Good
+        distance_text = f"{distance_emoji} {color_class} 到Basel SBB: {basel_time}分钟"
+    else:
+        distance_emoji = "🚇"
+        color_class = "🔴"  # Fair
+        distance_text = f"{distance_emoji} {color_class} 到Basel SBB: {basel_time}分钟"
+
+    return distance_text
+
+
 def render_badge_row(items):
     """Render pill badges for quick scanning."""
     chips = "".join(f'<span class="badge-chip">{item}</span>' for item in items if item)
@@ -1123,6 +1160,10 @@ def render_listing_selector(listings):
                 f'<div class="listing-meta">{format_area(listing.area)} · {listing.location or listing.city or "位置未知"}</div>',
                 unsafe_allow_html=True,
             )
+            # Public Transportation Distance Indicator 🚇
+            transport_distance = get_transport_distance_indicator(listing)
+            if transport_distance:
+                st.markdown(f'<div class="listing-meta" style="margin-top: 0.2rem;">{transport_distance}</div>', unsafe_allow_html=True)
             render_badge_row(score_badges(listing)[:4])
             render_badge_row(compact_extracted_labels(listing, limit=2))
             st.caption(listing.source)
