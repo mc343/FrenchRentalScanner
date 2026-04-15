@@ -109,6 +109,23 @@ st.markdown(
         background: linear-gradient(180deg, #ffffff 0%, #fff8f6 100%);
         box-shadow: 0 10px 28px rgba(79, 33, 33, 0.05);
     }
+    .listing-scroll-panel {
+        max-height: calc(100vh - 260px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-right: 0.4rem;
+    }
+    .listing-scroll-panel::-webkit-scrollbar {
+        width: 10px;
+    }
+    .listing-scroll-panel::-webkit-scrollbar-thumb {
+        background: #f0c9c2;
+        border-radius: 999px;
+    }
+    .listing-scroll-panel::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 999px;
+    }
     .listing-price {
         color: var(--airbnb-ink);
         font-size: 1.1rem;
@@ -464,6 +481,49 @@ def availability_text(listing):
     return f"{days}天后可入住"
 
 
+def availability_bucket_flags(listing):
+    """Return bucket flags for the listing availability date."""
+    available_date = getattr(listing, "available_date", None)
+    if not available_date:
+        return {
+            "unknown": True,
+            "within_3_months": False,
+            "between_3_and_4_months": False,
+            "over_4_months": False,
+        }
+
+    days = (available_date.date() - datetime.now().date()).days
+    return {
+        "unknown": False,
+        "within_3_months": days <= 90,
+        "between_3_and_4_months": 90 < days <= 120,
+        "over_4_months": days > 120,
+    }
+
+
+def matches_availability_filters(listing, ui_filters):
+    """Apply checkbox-based availability bucket filtering."""
+    selected = [
+        ui_filters.get("availability_within_3_months"),
+        ui_filters.get("availability_3_to_4_months"),
+        ui_filters.get("availability_over_4_months"),
+        ui_filters.get("availability_unknown"),
+    ]
+    if not any(selected):
+        return True
+
+    flags = availability_bucket_flags(listing)
+    if ui_filters.get("availability_within_3_months") and flags["within_3_months"]:
+        return True
+    if ui_filters.get("availability_3_to_4_months") and flags["between_3_and_4_months"]:
+        return True
+    if ui_filters.get("availability_over_4_months") and flags["over_4_months"]:
+        return True
+    if ui_filters.get("availability_unknown") and flags["unknown"]:
+        return True
+    return False
+
+
 def refresh_age_text(listing):
     """Return a user-facing last-refresh label."""
     last_refreshed = getattr(listing, "last_refreshed", None)
@@ -603,6 +663,90 @@ def translate_listing_title(title):
     return translated or text
 
 
+def translate_description_text(text):
+    """Translate common French rental-description phrases into readable Chinese."""
+    import re
+
+    source = str(text or "").strip()
+    if not source:
+        return "暂无描述。"
+
+    translated = f" {source} "
+    replacements = [
+        (r"\bà louer\b", "出租"),
+        (r"\blibre de suite\b", "可立即入住"),
+        (r"\blibre début août\b", "8月初可入住"),
+        (r"\blibre\b", "可入住"),
+        (r"\bstudio\b", "单间"),
+        (r"\bappartement\b", "公寓"),
+        (r"\bmaison\b", "住宅"),
+        (r"\bmeubl[ée]?\b", "带家具"),
+        (r"\bnon meubl[ée]?\b", "不带家具"),
+        (r"\bpi[eè]ce de vie\b", "起居空间"),
+        (r"\bcuisine équipée\b", "配备齐全的厨房"),
+        (r"\bcuisine aménagée\b", "已配置厨房"),
+        (r"\bcoin cuisine\b", "小厨房"),
+        (r"\bsalle de bains\b", "浴室"),
+        (r"\bsalle de douche\b", "淋浴间"),
+        (r"\bwc\b", "卫生间"),
+        (r"\bchambre\b", "卧室"),
+        (r"\bchambres\b", "卧室"),
+        (r"\bcave\b", "地窖/储物间"),
+        (r"\blocal vélo\b", "自行车储藏间"),
+        (r"\bplace de parking privée\b", "私人停车位"),
+        (r"\bparking privatif\b", "专属停车位"),
+        (r"\bparking\b", "停车位"),
+        (r"\bbalcon\b", "阳台"),
+        (r"\bterrasse\b", "露台"),
+        (r"\bascenseur\b", "电梯"),
+        (r"\br[ée]sidence\b", "住宅区"),
+        (r"\bpetite r[ée]sidence\b", "小型住宅区"),
+        (r"\bquartier calme\b", "安静街区"),
+        (r"\bproche frontière\b", "靠近边境"),
+        (r"\bproche suisse\b", "靠近瑞士"),
+        (r"\bproche du tram\b", "靠近电车"),
+        (r"\bface au tram\b", "就在电车对面"),
+        (r"\bproche gare\b", "靠近火车站"),
+        (r"\bcentre ville\b", "市中心"),
+        (r"\bcentre-ville\b", "市中心"),
+        (r"\bentièrement rénové[e]?\b", "全新翻修"),
+        (r"\brefait à neuf\b", "全新翻修"),
+        (r"\btrès beau\b", "非常不错"),
+        (r"\btrès belles prestations\b", "整体配置很好"),
+        (r"\bau calme\b", "环境安静"),
+        (r"\blumineux\b", "采光好"),
+        (r"\bbien agencé\b", "布局合理"),
+        (r"\bsol carrelé\b", "瓷砖地面"),
+        (r"\bgrande douche\b", "大淋浴间"),
+        (r"\bvaste pièce principale\b", "宽敞主空间"),
+        (r"\bcharges comprises\b", "含杂费"),
+        (r"\bdont provision sur charges\b", "其中杂费预付款"),
+        (r"\bhonoraires charge locataire\b", "租客承担中介费"),
+        (r"\bfrais de visite\b", "看房费用"),
+        (r"\brédaction du bail\b", "合同起草费"),
+        (r"\brégularisation annuelle\b", "按年结算"),
+    ]
+    for pattern, replacement in replacements:
+        translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
+
+    sentence_fixes = [
+        (r"\bpour toutes demandes concernant ce bien, contactez directement\b", "如需咨询这套房源，请直接联系"),
+        (r"\bet pour plus d'informations concernant ce bien, contactez\b", "如需更多信息，请联系"),
+        (r"\bdécouvrez\b", "可了解"),
+        (r"\bsitué dans\b", "位于"),
+        (r"\bil est\b", "房源为"),
+        (r"\bà l'entrée\b", "入户处有"),
+        (r"\bde plus, vous trouverez\b", "另外还有"),
+        (r"\bce bien se compose de\b", "这套房源包括"),
+    ]
+    for pattern, replacement in sentence_fixes:
+        translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
+
+    translated = re.sub(r"\s+", " ", translated).strip()
+    translated = translated.replace(" !", "！").replace(" ?", "？")
+    return translated
+
+
 def closest_public_transport_distance(listing):
     """Extract nearest bus/tram/train distance in meters from listing text."""
     import re
@@ -653,38 +797,38 @@ def compute_pros_cons(listing):
     cons = []
 
     if listing.images and len(listing.images) >= 6:
-        pros.append("photos are plentiful")
+        pros.append("照片数量充足")
     elif not listing.images:
-        cons.append("no photos saved")
+        cons.append("没有保存到照片")
     else:
-        cons.append("limited photos")
+        cons.append("照片数量偏少")
 
     if listing.area and listing.price:
         price_per_m2 = listing.price / listing.area
         if price_per_m2 <= 25:
-            pros.append("price per m2 looks attractive")
+            pros.append("每平方米租金看起来较有吸引力")
         elif price_per_m2 >= 40:
-            cons.append("price per m2 looks high")
+            cons.append("每平方米租金偏高")
 
     if listing.features:
         feature_blob = " ".join(listing.features).lower()
         if "balcony" in feature_blob or "balcon" in feature_blob:
-            pros.append("has balcony")
+            pros.append("带阳台")
         if "parking" in feature_blob:
-            pros.append("has parking")
+            pros.append("带停车位")
         if "elevator" in feature_blob or "ascenseur" in feature_blob:
-            pros.append("has elevator")
+            pros.append("带电梯")
 
     if getattr(listing, "available_date", None):
         if listing.available_date.date() <= datetime.now().date() + timedelta(days=14):
-            pros.append("availability is soon")
+            pros.append("可入住时间较近")
         else:
-            cons.append("availability is not soon")
+            cons.append("可入住时间不算近")
     else:
-        cons.append("availability date missing")
+        cons.append("缺少可入住日期")
 
     if not listing.description:
-        cons.append("description is thin")
+        cons.append("房源描述较少")
 
     return pros[:3], cons[:3]
 
@@ -1109,16 +1253,11 @@ def build_filters(sidebar_defaults):
             step=5,
         )
         property_type = st.selectbox("房型", TRACKED_PROPERTY_TYPES, format_func=lambda v: {"All": "全部", "Apartment": "公寓", "House": "房屋"}.get(v, v))
-        availability_window = st.selectbox("可入住时间", list(AVAILABILITY_FILTERS.keys()), format_func=lambda v: {
-            "Any time": "不限",
-            "Available now": "立即可入住",
-            "Within 7 days": "7天内",
-            "Within 14 days": "14天内",
-            "Within 30 days": "30天内",
-            "Within 60 days": "60天内",
-            "Within 3 months": "3个月内",
-            "Within 4 months": "4个月内",
-        }.get(v, v))
+        st.caption("可入住时间")
+        availability_within_3_months = st.checkbox("3个月内", value=False)
+        availability_3_to_4_months = st.checkbox("3-4个月", value=False)
+        availability_over_4_months = st.checkbox("4个月以上", value=False)
+        availability_unknown = st.checkbox("未知", value=False)
         recency_window = st.selectbox("收录时间", list(RECENCY_FILTERS.keys()), format_func=lambda v: {
             "All listings": "全部房源",
             "Seen in last 24h": "最近24小时",
@@ -1172,12 +1311,6 @@ def build_filters(sidebar_defaults):
     if recency_days:
         db_filters["seen_after"] = datetime.now() - timedelta(days=recency_days)
 
-    availability_days = AVAILABILITY_FILTERS[availability_window]
-    if availability_days == 0:
-        db_filters["available_now_only"] = True
-    elif availability_days:
-        db_filters["available_by"] = datetime.now() + timedelta(days=availability_days)
-
     scan_filters = {
         "location": city or sidebar_defaults["location"],
         "min_price": price_range[0],
@@ -1194,6 +1327,10 @@ def build_filters(sidebar_defaults):
         "need_furnished": need_furnished,
         "need_border": need_border,
         "need_elevator": need_elevator,
+        "availability_within_3_months": availability_within_3_months,
+        "availability_3_to_4_months": availability_3_to_4_months,
+        "availability_over_4_months": availability_over_4_months,
+        "availability_unknown": availability_unknown,
     }
     return db_filters, scan_filters, ACTIVE_SOURCES, scan_clicked, ui_filters
 
@@ -1455,6 +1592,8 @@ def render_listing_detail(db, listing):
     st.write(f"**可入住日期：** {listing.available_date.strftime('%Y-%m-%d') if listing.available_date else '未知'}")
     st.write(f"**首次收录：** {listing.first_seen.strftime('%Y-%m-%d') if listing.first_seen else '未知'}")
     st.write(f"**原始链接：** {listing.url or '无'}")
+    st.write("**中文描述：**")
+    st.write(translate_description_text(listing.description))
     st.write("**原文描述：**")
     st.write(listing.description or "暂无描述。")
     if listing.url:
@@ -1524,7 +1663,9 @@ def render_listing_browser(db, listings):
 
     left_col, right_col = st.columns([1.05, 1.6], gap="large")
     with left_col:
+        st.markdown('<div class="listing-scroll-panel">', unsafe_allow_html=True)
         render_listing_selector(listings)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     listing_map = {listing.id: listing for listing in listings}
     selected_listing = listing_map[st.session_state.selected_listing_id]
@@ -1649,6 +1790,8 @@ def main():
         if ui_filters["require_basel_estimate"] and commute_minutes is None:
             continue
         if commute_minutes is not None and commute_minutes > ui_filters["max_basel_minutes"]:
+            continue
+        if not matches_availability_filters(listing, ui_filters):
             continue
         if not matches_description_filters(listing, ui_filters):
             continue
