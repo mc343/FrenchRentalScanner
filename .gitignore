@@ -44,6 +44,9 @@ Thumbs.db
 
 # Logs
 *.log
+.chrome-tmp/
+dashboard/comparis_capture_debug/
+dashboard/*.py_failed
 
 # Environment variables
 .env
