@@ -11,14 +11,16 @@ import subprocess
 import sys
 from typing import Dict, List
 
-from scraper import BieniciScraper
+from scraper import BieniciScraper, LogicImmoScraper, PAPScraper
 from database import DatabaseManager
 
 SCRAPER_REGISTRY = {
     "Bienici": BieniciScraper,
+    "LogicImmo": LogicImmoScraper,
+    "PAP": PAPScraper,
 }
 
-ACTIVE_SOURCES = ["Bienici"]
+ACTIVE_SOURCES = ["Bienici", "LogicImmo", "PAP"]
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB_PATH = os.path.join(PROJECT_ROOT, "rental_listings.db")
 

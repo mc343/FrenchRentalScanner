@@ -56,6 +56,15 @@ st.markdown(
             linear-gradient(180deg, var(--airbnb-cream) 0%, #fff 42%, #fff7f4 100%);
         color: var(--airbnb-ink);
     }
+    [data-testid="stToolbar"] {
+        display: none;
+    }
+    [data-testid="stHeaderActionElements"] {
+        display: none;
+    }
+    [data-testid="stDecoration"] {
+        display: none;
+    }
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #fff9f7 0%, #fff3ef 100%);
         border-right: 1px solid var(--airbnb-line);
@@ -371,15 +380,15 @@ def ensure_state():
 def format_price(value):
     """Format rent for display."""
     if value is None:
-        return "N/A"
-    return f"EUR {int(value):,}/month"
+        return "租金未知"
+    return f"EUR {int(value):,}/月"
 
 
 def format_area(value):
     """Format area for display."""
     if not value:
-        return "Unknown area"
-    return f"{value:.0f} m2"
+        return "面积未知"
+    return f"{value:.0f} 平方米"
 
 
 def get_transport_distance_indicator(listing):
@@ -513,6 +522,131 @@ def basel_sbb_text(listing):
     return f"Basel SBB：约{minutes}分钟（{suffix}）"
 
 
+def translate_feature_text(value):
+    """Translate common structured feature text into Chinese."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    lowered = text.lower()
+    direct_map = {
+        "new property": "新房源",
+        "elevator": "有电梯",
+        "parking": "有停车位",
+        "balcony/terrace": "阳台/露台",
+        "garden": "花园",
+    }
+    if lowered in direct_map:
+        return direct_map[lowered]
+
+    prefix_map = {
+        "rooms:": "房间数",
+        "deposit:": "押金",
+        "agency fee:": "中介费",
+        "energy:": "能耗等级",
+        "ghg:": "温室气体等级",
+    }
+    for prefix, label in prefix_map.items():
+        if lowered.startswith(prefix):
+            return f"{label}：{text.split(':', 1)[1].strip()}"
+
+    return text
+
+
+def translate_property_type_text(value):
+    """Translate property type labels into Chinese."""
+    mapping = {
+        "apartment": "公寓",
+        "house": "独栋住宅",
+        "studio": "单间",
+    }
+    return mapping.get(str(value or "").strip().lower(), str(value or "未说明"))
+
+
+def translate_listing_title(title):
+    """Translate common French rental title tokens into Chinese."""
+    import re
+
+    text = str(title or "").strip()
+    if not text:
+        return "未命名房源"
+
+    replacements = [
+        (r"\bappartement\b", "公寓"),
+        (r"\bstudio\b", "单间"),
+        (r"\bmaison\b", "住宅"),
+        (r"\bmeubl[ée]?\b", "带家具"),
+        (r"\bnon meubl[ée]?\b", "不带家具"),
+        (r"\b[àa]\s+louer\b", "出租"),
+        (r"\blocation\b", "出租"),
+        (r"\bpi[eè]ce\b", "房间"),
+        (r"\bpi[eè]ces\b", "房间"),
+        (r"\bchambre\b", "卧室"),
+        (r"\bchambres\b", "卧室"),
+        (r"\bcentre[- ]ville\b", "市中心"),
+        (r"\bproche fronti[èe]re\b", "靠近边境"),
+        (r"\bproche suisse\b", "靠近瑞士"),
+        (r"\bparking\b", "停车位"),
+        (r"\bbalcon\b", "阳台"),
+        (r"\bterrasse\b", "露台"),
+        (r"\bjardin\b", "花园"),
+        (r"\br[ée]sidence\b", "住宅区"),
+        (r"\bduplex\b", "复式"),
+        (r"\bquartier calme\b", "安静街区"),
+    ]
+
+    translated = text
+    for pattern, replacement in replacements:
+        translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
+
+    translated = re.sub(r"\s+", " ", translated).strip(" -|")
+    return translated or text
+
+
+def closest_public_transport_distance(listing):
+    """Extract nearest bus/tram/train distance in meters from listing text."""
+    import re
+
+    payload = " ".join(
+        part for part in [
+            getattr(listing, "description", "") or "",
+            " ".join(getattr(listing, "features", []) or []),
+            json.dumps(getattr(listing, "contact_info", {}) or {}, ensure_ascii=False),
+        ]
+        if part
+    )
+    lowered = " ".join(payload.lower().split())
+    patterns = [
+        r"(\d{2,4})\s*m(?:[èe]tres?)?\s*(?:du|de la|de l['’]|de|des|d['’])?\s*(tram|bus|gare|train|transports?)",
+        r"(tram|bus|gare|train|transports?)\s*(?:à|a)?\s*(\d{2,4})\s*m(?:[èe]tres?)?",
+        r"(\d{2,4})\s*m(?:[èe]tres?)?\s*(?:à pied )?(?:du|de la|de l['’]|de|des|d['’])?\s*(tram|bus|gare|train|station)",
+    ]
+    label_map = {
+        "tram": "电车",
+        "bus": "公交",
+        "gare": "火车站",
+        "train": "火车站",
+        "station": "车站",
+        "transport": "公共交通",
+        "transports": "公共交通",
+    }
+    matches = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, lowered, re.IGNORECASE):
+            if match.group(1).isdigit():
+                meters = int(match.group(1))
+                transport_key = match.group(2)
+            else:
+                transport_key = match.group(1)
+                meters = int(match.group(2))
+            if 20 <= meters <= 5000:
+                matches.append((meters, label_map.get(transport_key, "公共交通")))
+
+    if not matches:
+        return None, None
+    return min(matches, key=lambda item: item[0])
+
+
 def compute_pros_cons(listing):
     """Generate lightweight review hints for a listing."""
     pros = []
@@ -573,7 +707,7 @@ def extract_description_details(listing):
 
     charges_match = re.search(r"(?:charges?|charge)\s*[:\-]?\s*(\d+[\s,.]?\d*)\s*(?:€|eur)", normalized, re.IGNORECASE)
     if charges_match:
-        add("Charges", f"EUR {charges_match.group(1).replace(' ', '').replace(',', '.')}")
+        add("杂费", f"EUR {charges_match.group(1).replace(' ', '').replace(',', '.')}")
 
     deposit_match = re.search(r"(?:d[eé]p[oô]t(?: de garantie)?|caution)\s*[:\-]?\s*(\d+[\s,.]?\d*)\s*(?:€|eur)", normalized, re.IGNORECASE)
     if deposit_match:
@@ -627,13 +761,16 @@ def extract_description_details(listing):
         add("通勤", "靠近步行桥")
     if "tram" in lowered or "bus" in lowered or "gare" in lowered:
         add("交通", "提到公共交通便利")
+    transport_distance, transport_type = closest_public_transport_distance(listing)
+    if transport_distance and transport_type:
+        add("最近交通", f"{transport_type}约 {transport_distance} 米")
 
     return details[:10]
 
 
 def compact_extracted_labels(listing, limit=3):
     """Return a small set of high-signal extracted detail labels for cards."""
-    preferred = {"押金", "中介费", "楼层", "户型", "卧室", "户外", "停车", "交通", "位置", "家具"}
+    preferred = {"押金", "中介费", "楼层", "户型", "卧室", "户外", "停车", "交通", "最近交通", "位置", "家具", "杂费"}
     extracted = extract_description_details(listing)
     items = []
     for label, value in extracted:
@@ -680,7 +817,7 @@ def chinese_summary(listing):
     location = listing.location or listing.city or "位置待确认"
     rent = f"{int(listing.price)}欧元" if listing.price else "租金未知"
     area = f"{int(listing.area)}平方米" if listing.area else "面积未知"
-    features = "、".join((listing.features or [])[:4]) or "暂无明确配套信息"
+    features = "、".join(translate_feature_text(item) for item in (listing.features or [])[:4]) or "暂无明确配套信息"
     extracted = extract_description_details(listing)
     extracted_text = "；".join(f"{label}{value}" for label, value in extracted[:4]) if extracted else "描述里没有提取到更多结构化信息"
     pros, cons = compute_pros_cons(listing)
@@ -693,10 +830,16 @@ def chinese_summary(listing):
     else:
         source_text = "按房东提供位置估算" if commute_source == "location-based estimate" else "按城市中心估算"
         commute_text = f"到Basel SBB公共交通约{commute_minutes}分钟，{source_text}。"
+    transport_distance, transport_type = closest_public_transport_distance(listing)
+    if transport_distance and transport_type:
+        transport_text = f"房源中提到最近{transport_type}约 {transport_distance} 米。"
+    else:
+        transport_text = "房源中暂时没有明确写出最近公交、电车或火车站的米数距离。"
     return (
         f"这套房源来自{listing.source or '未知来源'}，位于{location}，月租约{rent}，面积约{area}。"
-        f"房型为{listing.property_type or '未说明'}，{availability_text(listing)}。"
+        f"房型为{translate_property_type_text(listing.property_type)}，{availability_text(listing)}。"
         f"{commute_text}"
+        f"{transport_text}"
         f"目前提取到的主要信息包括：{features}。"
         f"从描述中进一步识别到：{extracted_text}。"
         f"优点：{pros_text}。风险点：{cons_text}。{rating}"
@@ -713,6 +856,9 @@ def score_badges(listing):
     commute_minutes, _ = estimate_basel_sbb_minutes(listing)
     if commute_minutes is not None:
         badges.append(f"Basel SBB 约{commute_minutes}分钟")
+    transport_distance, transport_type = closest_public_transport_distance(listing)
+    if transport_distance and transport_type:
+        badges.append(f"最近{transport_type}约 {transport_distance} 米")
     badges.append(refresh_age_text(listing))
     if getattr(listing, "needs_review", False):
         badges.append("待复查")
@@ -732,9 +878,9 @@ def scan_from_dashboard(filters, sources):
         source_result = result["per_source_results"].get(source, {})
         if source_result.get("error"):
             has_error = True
-            parts.append(f"{source}: error - {source_result['error']}")
+            parts.append(f"{source}: 失败 - {source_result['error']}")
         else:
-            parts.append(f"{source}: {source_result.get('count', 0)} listings")
+            parts.append(f"{source}: {source_result.get('count', 0)} 条")
     return result, " | ".join(parts), has_error
 
 
@@ -886,24 +1032,24 @@ def refresh_listing_manually(db, listing):
         scraper = BieniciScraper()
         refreshed_listing = scraper.fetch_listing_by_id(listing.listing_id)
         if not refreshed_listing:
-            return False, scraper.last_error or "Refresh failed for this Bien'ici listing."
+            return False, scraper.last_error or "Bien'ici 房源刷新失败。"
         refreshed_listing["listing_id"] = listing.listing_id or refreshed_listing.get("listing_id")
         refreshed_listing["source"] = listing.source or refreshed_listing.get("source")
         db.add_listing(refreshed_listing)
-        return True, "Listing updated from Bien'ici."
+        return True, "已从 Bien'ici 更新房源。"
 
     if not listing.url:
-        return False, "This listing has no source URL to refresh."
+        return False, "该房源没有原始链接，无法刷新。"
 
     scraper = init_url_scraper()
     refreshed_listing = scraper.scrape_url(listing.url)
     if not refreshed_listing:
-        return False, "Refresh failed. The website may be blocking the request or the listing is gone."
+        return False, "刷新失败，网站可能拦截了请求，或房源已经下架。"
 
     refreshed_listing["listing_id"] = listing.listing_id or refreshed_listing.get("listing_id")
     refreshed_listing["source"] = listing.source or refreshed_listing.get("source")
     db.add_listing(refreshed_listing)
-    return True, "Listing updated from source."
+    return True, "已从原始来源更新房源。"
 
 
 def refresh_listing_batch(db, listings, scope_label):
@@ -916,8 +1062,8 @@ def refresh_listing_batch(db, listings, scope_label):
     status = st.empty()
 
     for index, listing in enumerate(listings, start=1):
-        title = listing.title or f"Listing {listing.id}"
-        status.write(f"Refreshing {scope_label}: {index}/{total} - {title}")
+        title = translate_listing_title(listing.title)
+        status.write(f"正在刷新{scope_label}：{index}/{total} - {title}")
         success, message = refresh_listing_manually(db, listing)
         if success:
             refreshed += 1
@@ -948,7 +1094,6 @@ def build_filters(sidebar_defaults):
         st.header("房源筛选")
 
         city = st.selectbox("地区", TRACKED_PLACES, index=TRACKED_PLACES.index(sidebar_defaults["location"]) if sidebar_defaults["location"] in TRACKED_PLACES else 0)
-        st.caption("搜索来源：Bien'ici")
         price_range = st.slider(
             "月租范围（欧元）",
             min_value=0,
@@ -1002,7 +1147,7 @@ def build_filters(sidebar_defaults):
         need_elevator = st.checkbox("只看提到电梯的房源", value=False)
 
         st.divider()
-        scan_clicked = st.button("扫描 Bien'ici", type="primary", use_container_width=True)
+        scan_clicked = st.button("扫描房源", type="primary", use_container_width=True)
 
     db_filters = {
         "city": city if city else None,
@@ -1097,13 +1242,13 @@ def render_compare_strip(listings):
         extracted_brief = "；".join(compact_extracted_labels(listing, limit=2)) or "-"
         metric_rows.append(
             {
-                "Listing": (listing.title or "Untitled")[:36],
+                "Listing": translate_listing_title(listing.title)[:36],
                 "Rent": format_price(listing.price),
                 "Area": format_area(listing.area),
                 "Availability": availability_text(listing),
                 "Basel SBB": basel_sbb_text(listing),
                 "Photos": len(listing.images or []),
-                "Details": extracted_brief,
+                "细节": extracted_brief,
                 "Rating": listing.personal_rating if listing.personal_rating is not None else "-",
                 "Pros": ", ".join(pros) if pros else "-",
                 "Risks": ", ".join(cons) if cons else "-",
@@ -1117,16 +1262,16 @@ def render_compare_strip(listings):
         listing = compare_map[listing_id]
         with col:
             st.markdown('<div class="compare-card">', unsafe_allow_html=True)
-            st.markdown(f"**{listing.title or 'Untitled'}**")
+            st.markdown(f"**{translate_listing_title(listing.title)}**")
             st.caption(f"{format_price(listing.price)} | {format_area(listing.area)}")
-            st.caption(f"{listing.location or listing.city or 'Unknown location'}")
+            st.caption(f"{listing.location or listing.city or '位置未知'}")
             render_badge_row([availability_text(listing), basel_sbb_text(listing)])
             render_badge_row(compact_extracted_labels(listing, limit=2))
             if listing.images:
                 st.markdown('<div class="photo-frame">', unsafe_allow_html=True)
                 st.image(listing.images[0], use_column_width=True)
                 compare_photo_index = st.selectbox(
-                    "Compare photo",
+                    "对比照片",
                     options=list(range(len(listing.images))),
                     format_func=lambda idx: f"照片 {idx + 1}",
                     key=f"compare_photo_{listing.id}",
@@ -1154,7 +1299,7 @@ def render_listing_selector(listings):
             else:
                 st.markdown('<div class="listing-thumb-empty">暂无照片预览</div>', unsafe_allow_html=True)
         with text_col:
-            st.markdown(f"**{listing.title or '未命名房源'}**")
+            st.markdown(f"**{translate_listing_title(listing.title)}**")
             st.markdown(f'<div class="listing-price">{format_price(listing.price)}</div>', unsafe_allow_html=True)
             st.markdown(
                 f'<div class="listing-meta">{format_area(listing.area)} · {listing.location or listing.city or "位置未知"}</div>',
@@ -1249,7 +1394,7 @@ def render_listing_detail(db, listing):
     st.markdown('<div class="detail-shell">', unsafe_allow_html=True)
     title_col, action_col = st.columns([3, 1])
     with title_col:
-        st.markdown(f"## {listing.title or '未命名房源'}")
+        st.markdown(f"## {translate_listing_title(listing.title)}")
         st.markdown(
             f'<div class="detail-topline">{listing.source} | {listing.location or listing.city or "位置未知"} | {format_price(listing.price)} | {format_area(listing.area)}</div>',
             unsafe_allow_html=True,
@@ -1290,17 +1435,28 @@ def render_listing_detail(db, listing):
     stat4.metric("待复查", "是" if getattr(listing, "needs_review", False) else "否")
     st.caption(refresh_age_text(listing))
     st.caption(basel_sbb_text(listing))
+    transport_distance, transport_type = closest_public_transport_distance(listing)
+    if transport_distance and transport_type:
+        st.caption(f"最近公共交通：最近{transport_type}约 {transport_distance} 米")
 
     render_photo_gallery(listing)
     render_extracted_details(listing)
 
     st.markdown('<div class="detail-block">', unsafe_allow_html=True)
     st.markdown("### 房源详情")
-    st.write(listing.description or "暂无描述。")
-    st.write(f"**特点：** {', '.join(listing.features or []) or '暂无'}")
+    st.write(f"**中文标题：** {translate_listing_title(listing.title)}")
+    st.write(f"**原文标题：** {listing.title or '暂无'}")
+    translated_features = [translate_feature_text(item) for item in (listing.features or []) if translate_feature_text(item)]
+    st.write(f"**主要特点（中文）：** {'、'.join(translated_features) if translated_features else '暂无'}")
+    if transport_distance and transport_type:
+        st.write(f"**最近公共交通：** 最近{transport_type}约 {transport_distance} 米")
+    else:
+        st.write("**最近公共交通：** 暂无明确米数信息")
     st.write(f"**可入住日期：** {listing.available_date.strftime('%Y-%m-%d') if listing.available_date else '未知'}")
     st.write(f"**首次收录：** {listing.first_seen.strftime('%Y-%m-%d') if listing.first_seen else '未知'}")
     st.write(f"**原始链接：** {listing.url or '无'}")
+    st.write("**原文描述：**")
+    st.write(listing.description or "暂无描述。")
     if listing.url:
         st.link_button("打开原始房源", listing.url)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -1334,18 +1490,18 @@ def render_listing_browser(db, listings):
             if not compare_targets:
                 st.warning("请先把至少一条房源加入对比。")
             else:
-                refreshed, failed = refresh_listing_batch(db, compare_targets, "compare shortlist")
-                message = f"Refreshed {refreshed} listing(s) from the compare shortlist."
+                refreshed, failed = refresh_listing_batch(db, compare_targets, "对比清单")
+                message = f"已刷新对比清单中的 {refreshed} 条房源。"
                 if failed:
-                    message += " Some failed: " + " | ".join(failed[:3])
+                    message += " 部分失败： " + " | ".join(failed[:3])
                 st.session_state.listing_flash_message = message
                 st.rerun()
     with batch_col2:
         if st.button("刷新当前列表", use_container_width=True):
-            refreshed, failed = refresh_listing_batch(db, listings, "visible listings")
-            message = f"Refreshed {refreshed} visible listing(s)."
+            refreshed, failed = refresh_listing_batch(db, listings, "当前列表")
+            message = f"已刷新当前列表中的 {refreshed} 条房源。"
             if failed:
-                message += " Some failed: " + " | ".join(failed[:3])
+                message += " 部分失败： " + " | ".join(failed[:3])
             st.session_state.listing_flash_message = message
             st.rerun()
     with batch_col3:
@@ -1357,10 +1513,10 @@ def render_listing_browser(db, listings):
             if not stale_targets:
                 st.warning("当前阈值下没有需要刷新的旧房源。")
             else:
-                refreshed, failed = refresh_listing_batch(db, stale_targets, "stale visible listings")
-                message = f"Refreshed {refreshed} stale visible listing(s)."
+                refreshed, failed = refresh_listing_batch(db, stale_targets, "需要刷新的当前列表")
+                message = f"已刷新过期房源 {refreshed} 条。"
                 if failed:
-                    message += " Some failed: " + " | ".join(failed[:3])
+                    message += " 部分失败： " + " | ".join(failed[:3])
                 st.session_state.listing_flash_message = message
                 st.rerun()
 
@@ -1385,11 +1541,11 @@ def render_favorites(db):
         return
 
     for listing in favorites:
-        with st.expander(f"{listing.title} | {format_price(listing.price)} | {availability_text(listing)}"):
+        with st.expander(f"{translate_listing_title(listing.title)} | {format_price(listing.price)} | {availability_text(listing)}"):
             st.write(chinese_summary(listing))
             if listing.images:
                 st.image(listing.images[0], width=280)
-            st.write(listing.review_notes or listing.description or "No notes or description available.")
+            st.write(listing.review_notes or listing.description or "暂无备注或描述。")
 
 
 def render_contact_queue(db):
@@ -1401,13 +1557,13 @@ def render_contact_queue(db):
         return
 
     for listing in contacted:
-        with st.expander(f"{listing.title} | {format_price(listing.price)} | {availability_text(listing)}"):
+        with st.expander(f"{translate_listing_title(listing.title)} | {format_price(listing.price)} | {availability_text(listing)}"):
             col1, col2 = st.columns([1.4, 1])
             with col1:
-                st.write(f"**Location:** {listing.location or listing.city or 'Unknown'}")
-                st.write(f"**Status:** {'Favorite' if listing.is_favorite else 'Tracked'}")
-                st.write(f"**Chinese summary:** {chinese_summary(listing)}")
-                st.write(f"**Notes:** {listing.review_notes or 'No follow-up notes yet.'}")
+                st.write(f"**位置：** {listing.location or listing.city or '未知'}")
+                st.write(f"**状态：** {'已收藏' if listing.is_favorite else '持续跟踪'}")
+                st.write(f"**中文摘要：** {chinese_summary(listing)}")
+                st.write(f"**备注：** {listing.review_notes or '暂无后续备注。'}")
                 if st.button("Re-open for review", key=f"reopen_review_{listing.id}", use_container_width=True):
                     db.toggle_needs_review(listing.id)
                     st.rerun()
@@ -1464,7 +1620,7 @@ def main():
         <div class="hero-panel">
             <div class="soft-kicker">Basel 通勤导向租房台</div>
             <div class="main-header">法国租房扫描器</div>
-            <div class="sub-header">查看 Huningue 和 Mulhouse 的 Bien'ici 租房信息，包含 Basel SBB 通勤估算、照片优先浏览、对比和中文摘要。</div>
+            <div class="sub-header">查看 Huningue 和 Mulhouse 的租房信息，包含 Basel SBB 通勤估算、照片优先浏览、对比和中文摘要。</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1474,15 +1630,15 @@ def main():
     render_manual_add_panel(db)
 
     if scan_clicked:
-        with st.spinner("正在扫描 Bien'ici..."):
+        with st.spinner("正在扫描房源..."):
             result, status_text, has_error = scan_from_dashboard(scan_filters, selected_sources)
         if has_error:
-            st.sidebar.error("Bien'ici 扫描失败。")
-            st.sidebar.info("Bien'ici 扫描时出现错误，你仍然可以在下方手动添加房源继续测试。")
+            st.sidebar.error("扫描时有部分请求失败。")
+            st.sidebar.info("系统已保留成功返回的房源，你也可以继续手动补充。")
         elif result["stored_count"] == 0:
-            st.sidebar.warning("Bien'ici 扫描完成，但没有符合当前筛选条件的房源。")
+            st.sidebar.warning("扫描完成，但没有符合当前筛选条件的房源。")
         else:
-            st.sidebar.success(f"Bien'ici 扫描完成，已新增或更新 {result['stored_count']} 条房源。")
+            st.sidebar.success(f"扫描完成，已新增或更新 {result['stored_count']} 条房源。")
         st.sidebar.caption(status_text)
 
     stats = db.get_stats()
