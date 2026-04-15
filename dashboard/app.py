@@ -1663,9 +1663,8 @@ def render_listing_browser(db, listings):
 
     left_col, right_col = st.columns([1.05, 1.6], gap="large")
     with left_col:
-        st.markdown('<div class="listing-scroll-panel">', unsafe_allow_html=True)
-        render_listing_selector(listings)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(height=980, border=False):
+            render_listing_selector(listings)
 
     listing_map = {listing.id: listing for listing in listings}
     selected_listing = listing_map[st.session_state.selected_listing_id]
