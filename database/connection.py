@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from contextlib import contextmanager
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 import os
 from .models import Base, Listing, SearchHistory, ViewingNote
 
@@ -83,13 +83,7 @@ class DatabaseManager:
         """
         with self.get_session() as session:
             try:
-                # Check if listing exists by URL or source listing ID
-                existing = session.query(Listing).filter(
-                    or_(
-                        Listing.url == listing_data.get('url'),
-                        Listing.listing_id == listing_data.get('listing_id')
-                    )
-                ).first()
+                existing = self._find_existing_listing(session, listing_data)
 
                 if existing:
                     # Update existing listing
@@ -111,38 +105,71 @@ class DatabaseManager:
                 print(f"Error adding listing: {e}")
                 return None
 
-    def add_listings_batch(self, listings_data: List[Dict]) -> int:
+    def add_listings_batch(self, listings_data: List[Dict], return_summary: bool = False) -> Union[int, Dict[str, int]]:
         """Add multiple listings in batch
 
         Args:
             listings_data: List of listing dictionaries
+            return_summary: When True, return inserted/updated breakdown
 
         Returns:
-            Number of listings added/updated
+            Number of listings added/updated, or a breakdown dictionary
         """
-        count = 0
+        inserted = 0
+        updated = 0
+        errors = 0
+        batch_duplicates = 0
         with self.get_session() as session:
+            pending_by_listing_id = {}
+            pending_by_url = {}
             for listing_data in listings_data:
                 try:
-                    existing = session.query(Listing).filter(
-                        Listing.url == listing_data.get('url')
-                    ).first()
+                    listing_id = str(listing_data.get("listing_id") or "").strip()
+                    url = str(listing_data.get("url") or "").strip()
+
+                    pending_match = None
+                    if listing_id:
+                        pending_match = pending_by_listing_id.get(listing_id)
+                    if not pending_match and url:
+                        pending_match = pending_by_url.get(url)
+
+                    if pending_match:
+                        self._merge_listing(pending_match, listing_data)
+                        pending_match.last_seen = datetime.now()
+                        batch_duplicates += 1
+                        continue
+
+                    existing = self._find_existing_listing(session, listing_data)
 
                     if existing:
                         self._merge_listing(existing, listing_data)
                         existing.last_seen = datetime.now()
+                        updated += 1
                     else:
                         listing_data = self._prepare_new_listing(listing_data)
                         listing = Listing(**listing_data)
                         session.add(listing)
-
-                    count += 1
+                        if listing_id:
+                            pending_by_listing_id[listing_id] = listing
+                        if url:
+                            pending_by_url[url] = listing
+                        inserted += 1
                 except Exception as e:
                     print(f"Error adding listing {listing_data.get('url')}: {e}")
+                    errors += 1
                     continue
 
             session.commit()
-        return count
+        stored_count = inserted + updated
+        if return_summary:
+            return {
+                "stored_count": stored_count,
+                "new_count": inserted,
+                "updated_count": updated,
+                "batch_duplicate_count": batch_duplicates,
+                "error_count": errors,
+            }
+        return stored_count
 
     def get_listings(self, filters: Dict = None, limit: int = 100) -> List[Listing]:
         """Get listings with optional filters
@@ -167,9 +194,21 @@ class DatabaseManager:
             if filters:
                 # Price filter
                 if 'min_price' in filters:
-                    query = query.filter(Listing.price >= filters['min_price'])
+                    query = query.filter(
+                        or_(
+                            Listing.price.is_(None),
+                            Listing.price <= 0,
+                            Listing.price >= filters['min_price'],
+                        )
+                    )
                 if 'max_price' in filters:
-                    query = query.filter(Listing.price <= filters['max_price'])
+                    query = query.filter(
+                        or_(
+                            Listing.price.is_(None),
+                            Listing.price <= 0,
+                            Listing.price <= filters['max_price'],
+                        )
+                    )
 
                 # Area filter
                 if 'min_area' in filters:
@@ -335,6 +374,54 @@ class DatabaseManager:
         payload.setdefault('last_seen', datetime.now())
         payload.setdefault('last_refreshed', datetime.now())
         return payload
+
+    def _find_existing_listing(self, session, listing_data: Dict) -> Optional[Listing]:
+        """Locate an existing listing by exact identifiers or a close duplicate match."""
+        url = listing_data.get("url")
+        listing_id = listing_data.get("listing_id")
+        if url or listing_id:
+            existing = session.query(Listing).filter(
+                or_(
+                    Listing.url == url,
+                    Listing.listing_id == listing_id,
+                )
+            ).first()
+            if existing:
+                return existing
+
+        city = str(listing_data.get("city") or listing_data.get("location") or "").strip()
+        property_type = str(listing_data.get("property_type") or "").strip()
+        price = float(listing_data.get("price") or 0)
+        area = float(listing_data.get("area") or 0)
+        title = self._normalize_signature_text(listing_data.get("title"))
+
+        if not city or not title or not price:
+            return None
+
+        query = session.query(Listing).filter(
+            Listing.city.ilike(city),
+            Listing.property_type == property_type,
+            Listing.price >= max(price - 150, 0),
+            Listing.price <= price + 150,
+        )
+        if area:
+            query = query.filter(
+                Listing.area >= max(area - 3, 0),
+                Listing.area <= area + 3,
+            )
+
+        candidates = query.limit(12).all()
+        for candidate in candidates:
+            if self._normalize_signature_text(candidate.title) == title:
+                return candidate
+        return None
+
+    def _normalize_signature_text(self, value: str) -> str:
+        """Normalize title text for duplicate matching."""
+        import re
+
+        cleaned = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
+        return " ".join(cleaned.split())[:80]
 
     def _merge_listing(self, existing: Listing, listing_data: Dict):
         """Merge scraped listing data without clobbering user review state."""

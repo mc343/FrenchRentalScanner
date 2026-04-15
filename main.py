@@ -5,8 +5,11 @@ Scans Bien'ici for rental apartments and houses in the current target locations,
 stores them in a database, and provides a dashboard for review and analysis.
 """
 import argparse
+import os
+import re
 import subprocess
 import sys
+from typing import Dict, List
 
 from scraper import BieniciScraper
 from database import DatabaseManager
@@ -16,6 +19,8 @@ SCRAPER_REGISTRY = {
 }
 
 ACTIVE_SOURCES = ["Bienici"]
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_DB_PATH = os.path.join(PROJECT_ROOT, "rental_listings.db")
 
 
 def default_filters() -> dict:
@@ -30,13 +35,92 @@ def default_filters() -> dict:
     }
 
 
+def _normalize_title(value: str) -> str:
+    """Create a lightweight comparable title token."""
+    cleaned = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
+    return " ".join(cleaned.split())[:80]
+
+
+def _listing_signature(listing: Dict) -> str:
+    """Build a source-agnostic signature to suppress duplicate listings."""
+    city = str(listing.get("city") or listing.get("location") or "").strip().lower()
+    property_type = str(listing.get("property_type") or "").strip().lower()
+    price = int(round(float(listing.get("price") or 0) / 100.0) * 100)
+    area = int(round(float(listing.get("area") or 0)))
+    title = _normalize_title(listing.get("title"))
+    return "|".join([city, property_type, str(price), str(area), title])
+
+
+def dedupe_listings(listings: List[Dict]) -> List[Dict]:
+    """Collapse obviously duplicated listings across websites."""
+    by_direct_key: Dict[str, Dict] = {}
+    deduped: Dict[str, Dict] = {}
+
+    for listing in listings:
+        direct_parts = [
+            str(listing.get("source") or "").strip().lower(),
+            str(listing.get("listing_id") or "").strip(),
+            str(listing.get("url") or "").strip().lower(),
+        ]
+        direct_key = "|".join(direct_parts)
+        existing_direct = by_direct_key.get(direct_key)
+        if direct_key.strip("|") and existing_direct:
+            current_images = len(existing_direct.get("images") or [])
+            new_images = len(listing.get("images") or [])
+            current_features = len(existing_direct.get("features") or [])
+            new_features = len(listing.get("features") or [])
+            if (new_images, new_features) > (current_images, current_features):
+                by_direct_key[direct_key] = listing
+            continue
+        if direct_key.strip("|"):
+            by_direct_key[direct_key] = listing
+
+    for listing in by_direct_key.values():
+        signature = _listing_signature(listing)
+        current = deduped.get(signature)
+        if not current:
+            deduped[signature] = listing
+            continue
+
+        current_images = len(current.get("images") or [])
+        new_images = len(listing.get("images") or [])
+        current_features = len(current.get("features") or [])
+        new_features = len(listing.get("features") or [])
+
+        if (new_images, new_features) > (current_images, current_features):
+            primary = listing
+            secondary = current
+        else:
+            primary = current
+            secondary = listing
+
+        merged_sources = set(primary.get("contact_info", {}).get("duplicate_sources", []))
+        merged_sources.add(primary.get("source", ""))
+        merged_sources.add(secondary.get("source", ""))
+        merged_sources.discard("")
+
+        merged_urls = set(primary.get("contact_info", {}).get("duplicate_urls", []))
+        if primary.get("url"):
+            merged_urls.add(primary["url"])
+        if secondary.get("url"):
+            merged_urls.add(secondary["url"])
+
+        primary_contact = dict(primary.get("contact_info") or {})
+        primary_contact["duplicate_sources"] = sorted(merged_sources)
+        primary_contact["duplicate_urls"] = sorted(merged_urls)
+        primary["contact_info"] = primary_contact
+        deduped[signature] = primary
+
+    return list(deduped.values())
+
+
 def run_scan(filters: dict = None, sources: list = None) -> dict:
     """Run scans for the selected websites and persist results."""
     filters = filters or default_filters()
     selected_sources = sources or ACTIVE_SOURCES
 
-    db = DatabaseManager("rental_listings.db")
-    all_listings = []
+    db = DatabaseManager(DEFAULT_DB_PATH)
+    raw_listings = []
     per_source_results = {}
 
     for source in selected_sources:
@@ -48,20 +132,30 @@ def run_scan(filters: dict = None, sources: list = None) -> dict:
         try:
             scraper = scraper_cls()
             source_listings = scraper.search(filters)
-            all_listings.extend(source_listings)
-            source_error = getattr(scraper, "last_error", None)
-            per_source_results[source] = {"count": len(source_listings), "error": source_error}
+            raw_listings.extend(source_listings)
+            per_source_results[source] = {
+                "count": len(source_listings),
+                "error": getattr(scraper, "last_error", None),
+            }
         except Exception as exc:
             per_source_results[source] = {"count": 0, "error": str(exc)}
 
-    stored_count = db.add_listings_batch(all_listings) if all_listings else 0
+    deduped_listings = dedupe_listings(raw_listings)
+    if deduped_listings:
+        store_summary = db.add_listings_batch(deduped_listings, return_summary=True)
+    else:
+        store_summary = {"stored_count": 0, "new_count": 0, "updated_count": 0, "error_count": 0}
+    stored_count = store_summary["stored_count"]
 
     scan_city = str(filters.get("location") or "").strip()
     if scan_city:
         for source in selected_sources:
+            source_result = per_source_results.get(source, {})
+            if source_result.get("error") or int(source_result.get("count") or 0) == 0:
+                continue
             source_ids = [
                 listing.get("listing_id")
-                for listing in all_listings
+                for listing in raw_listings
                 if listing.get("source") == source
             ]
             db.reconcile_source_city_inventory(source, scan_city, source_ids)
@@ -69,8 +163,13 @@ def run_scan(filters: dict = None, sources: list = None) -> dict:
     return {
         "filters": filters,
         "sources": selected_sources,
-        "listings": all_listings,
+        "raw_listings": raw_listings,
+        "listings": deduped_listings,
         "stored_count": stored_count,
+        "new_count": store_summary.get("new_count", 0),
+        "updated_count": store_summary.get("updated_count", 0),
+        "batch_duplicate_count": store_summary.get("batch_duplicate_count", 0),
+        "store_error_count": store_summary.get("error_count", 0),
         "per_source_results": per_source_results,
         "stats": db.get_stats(),
     }
@@ -102,8 +201,15 @@ def scan_listings(filters: dict = None, sources: list = None):
         print()
 
     if result["listings"]:
-        print(f"Storing {len(result['listings'])} listings in database...")
-        print(f"  Added/updated {result['stored_count']} listings")
+        print(f"Persisting {len(result['listings'])} de-duplicated listings...")
+        print(
+            f"  Added/updated {result['stored_count']} listings "
+            f"(new {result.get('new_count', 0)}, updated {result.get('updated_count', 0)})"
+        )
+        if result.get("batch_duplicate_count", 0):
+            print(f"  Collapsed {result['batch_duplicate_count']} duplicate row(s) inside the same scan batch")
+        if len(result["raw_listings"]) != len(result["listings"]):
+            print(f"  Suppressed {len(result['raw_listings']) - len(result['listings'])} duplicate listing(s)")
         print()
         print("Database Statistics:")
         print(f"  Total listings: {result['stats']['total_listings']}")
@@ -119,7 +225,7 @@ def scan_listings(filters: dict = None, sources: list = None):
 
 def show_stats():
     """Show database statistics."""
-    db = DatabaseManager("rental_listings.db")
+    db = DatabaseManager(DEFAULT_DB_PATH)
     stats = db.get_stats()
 
     print("Database Statistics")
