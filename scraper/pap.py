@@ -18,6 +18,7 @@ class PAPScraper(BaseScraper):
     BASE_URL = "https://www.pap.fr"
     SEARCH_URLS = {
         "Mulhouse": "https://www.pap.fr/annonce/locations-mulhouse-68-g43628",
+        "Huningue": "https://www.pap.fr/annonce/locations-huningue-68-g43628",
     }
 
     def __init__(self, config: Dict = None):
