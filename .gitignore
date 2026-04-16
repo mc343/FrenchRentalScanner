@@ -71,3 +71,6 @@ exports/
 
 # Release builds
 release/
+
+# Git Worktrees
+.worktrees/
