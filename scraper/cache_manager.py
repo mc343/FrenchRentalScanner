@@ -5,6 +5,7 @@ Caches fetched pages and location mappings to avoid redundant downloads.
 Uses thread-local storage to avoid conflicts between concurrent users.
 """
 import time
+import threading
 from typing import Dict, Optional, Tuple
 
 
@@ -17,6 +18,8 @@ class CacheManager:
         self.location_cache: Dict[str, Tuple[str, float]] = {}
         self.page_ttl = 7200  # 2 hours
         self.location_ttl = 86400  # 24 hours
+        self.page_lock = threading.Lock()
+        self.location_lock = threading.Lock()
 
     def get_page(self, url: str) -> Optional[str]:
         """
@@ -28,17 +31,18 @@ class CacheManager:
         Returns:
             Cached HTML content or None if not cached/expired
         """
-        if url not in self.page_cache:
-            return None
+        with self.page_lock:
+            if url not in self.page_cache:
+                return None
 
-        content, timestamp = self.page_cache[url]
-        age = time.time() - timestamp
+            content, timestamp = self.page_cache[url]
+            age = time.time() - timestamp
 
-        if age > self.page_ttl:
-            del self.page_cache[url]
-            return None
+            if age > self.page_ttl:
+                del self.page_cache[url]
+                return None
 
-        return content
+            return content
 
     def set_page(self, url: str, content: str) -> None:
         """
@@ -48,7 +52,8 @@ class CacheManager:
             url: Page URL
             content: HTML content to cache
         """
-        self.page_cache[url] = (content, time.time())
+        with self.page_lock:
+            self.page_cache[url] = (content, time.time())
 
     def get_location_url(self, location: str) -> Optional[str]:
         """
@@ -60,17 +65,18 @@ class CacheManager:
         Returns:
             Cached URL or None if not cached/expired
         """
-        if location not in self.location_cache:
-            return None
+        with self.location_lock:
+            if location not in self.location_cache:
+                return None
 
-        url, timestamp = self.location_cache[location]
-        age = time.time() - timestamp
+            url, timestamp = self.location_cache[location]
+            age = time.time() - timestamp
 
-        if age > self.location_ttl:
-            del self.location_cache[location]
-            return None
+            if age > self.location_ttl:
+                del self.location_cache[location]
+                return None
 
-        return url
+            return url
 
     def set_location_url(self, location: str, url: str) -> None:
         """
@@ -80,4 +86,5 @@ class CacheManager:
             location: Location name
             url: Search URL for the location
         """
-        self.location_cache[location] = (url, time.time())
+        with self.location_lock:
+            self.location_cache[location] = (url, time.time())
