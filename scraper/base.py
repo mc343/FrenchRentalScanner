@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 class BaseScraper(ABC):
     """Base class for all rental website scrapers."""
 
+    # Retry configuration constants
+    BASE_TIMEOUT = 10
+    TIMEOUT_INCREMENT = 30
+    MAX_RETRIES = 3
+
     def __init__(self, config: Dict = None):
         self.config = config or {}
         self.session = requests.Session()
@@ -54,7 +59,7 @@ class BaseScraper(ABC):
                     logger.error(f"Failed to fetch {url} after {retry} attempts")
                     return None
 
-    def _get_page_with_retry(self, url: str, max_retries: int = 3) -> Optional[BeautifulSoup]:
+    def _get_page_with_retry(self, url: str, max_retries: int = None) -> Optional[BeautifulSoup]:
         """
         Fetch page with exponential backoff and timeout increment.
 
@@ -70,22 +75,28 @@ class BaseScraper(ABC):
         Returns:
             BeautifulSoup object or None if all retries fail
         """
-        base_timeout = 10
+        if max_retries is None:
+            max_retries = self.MAX_RETRIES
 
         for attempt in range(max_retries):
-            current_timeout = base_timeout + (attempt * 30)  # 10s, 40s, 70s, 100s
+            current_timeout = self.BASE_TIMEOUT + (attempt * self.TIMEOUT_INCREMENT)  # 10s, 40s, 70s, 100s
 
             try:
                 response = self.session.get(url, timeout=current_timeout)
                 response.raise_for_status()
                 return BeautifulSoup(response.content, "html.parser")
-            except Exception as exc:
+            except requests.exceptions.RequestException as exc:
+                # Handle network-related errors (timeout, connection error, HTTP error, etc.)
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt  # 1s, 2s, 4s
                     logger.warning(f"Attempt {attempt + 1} failed for {url}: {exc}, retrying in {wait_time}s")
                     time.sleep(wait_time)
                 else:
                     logger.error(f"Failed to fetch {url} after {max_retries} attempts")
+            except Exception as exc:
+                # Handle unexpected errors (should not retry)
+                logger.error(f"Unexpected error fetching {url}: {exc}")
+                return None
 
         return None
 
