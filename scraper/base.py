@@ -54,6 +54,41 @@ class BaseScraper(ABC):
                     logger.error(f"Failed to fetch {url} after {retry} attempts")
                     return None
 
+    def _get_page_with_retry(self, url: str, max_retries: int = 3) -> Optional[BeautifulSoup]:
+        """
+        Fetch page with exponential backoff and timeout increment.
+
+        Implements retry logic with:
+        - Exponential backoff waits: 1s, 2s, 4s
+        - Timeout increment per retry: +30s
+        - Maximum 3 retry attempts
+
+        Args:
+            url: Page URL to fetch
+            max_retries: Maximum number of retry attempts (default: 3)
+
+        Returns:
+            BeautifulSoup object or None if all retries fail
+        """
+        base_timeout = 10
+
+        for attempt in range(max_retries):
+            current_timeout = base_timeout + (attempt * 30)  # 10s, 40s, 70s, 100s
+
+            try:
+                response = self.session.get(url, timeout=current_timeout)
+                response.raise_for_status()
+                return BeautifulSoup(response.content, "html.parser")
+            except Exception as exc:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 1s, 2s, 4s
+                    logger.warning(f"Attempt {attempt + 1} failed for {url}: {exc}, retrying in {wait_time}s")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Failed to fetch {url} after {max_retries} attempts")
+
+        return None
+
     def extract_price(self, text: str) -> Optional[float]:
         """Extract price from text."""
         import re
