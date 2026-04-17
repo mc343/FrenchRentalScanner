@@ -33,9 +33,9 @@ class LogicImmoScraper(BaseScraper):
         if not search_url:
             return []
 
-        soup = self.get_page(search_url)
+        soup = self._get_page_with_retry(search_url)
         if not soup:
-            self.last_error = f"Logic-Immo search page unavailable for {location}"
+            self.last_error = f"Logic-Immo search page unavailable for {location} after {self.MAX_RETRIES} retries"
             return []
 
         detail_urls = self._extract_listing_urls(soup)
@@ -49,9 +49,9 @@ class LogicImmoScraper(BaseScraper):
 
     def parse_listing(self, url: str) -> Dict:
         """Parse one Logic-Immo detail page."""
-        soup = self.get_page(url)
+        soup = self._get_page_with_retry(url)
         if not soup:
-            self.last_error = f"Logic-Immo listing unavailable: {url}"
+            self.last_error = f"Logic-Immo listing unavailable after {self.MAX_RETRIES} retries: {url}"
             return {}
 
         title = self._meta_content(soup, "property", "og:title") or self._text_or_empty(soup.find("h1"))
