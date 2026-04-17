@@ -281,6 +281,10 @@ STALE_REFRESH_OPTIONS = {
 }
 
 TRACKED_PLACES = ["Huningue", "Mulhouse"]
+TRACKED_PLACES_ZH = {
+    "Huningue": "洛南格",
+    "Mulhouse": "米卢斯",
+}
 TRACKED_PROPERTY_TYPES = ["All", "Apartment", "House"]
 
 BASEL_SBB_TRANSIT_MINUTES = {
@@ -714,168 +718,194 @@ def translate_listing_title(title):
 
 
 def translate_description_text(text):
-    """Translate common French rental-description phrases into readable Chinese."""
+    """Translate French rental descriptions to Chinese - comprehensive version."""
     import re
 
     source = str(text or "").strip()
     if not source:
         return "暂无描述。"
 
-    # First translate city names
-    city_translations = {
+    # Clean up HTML line breaks first
+    source = re.sub(r'<br\s*/?>', '，', source)
+
+    # City translations first
+    city_map = {
         "huningue": "洛南格",
         "mulhouse": "米卢斯",
         "saint-louis": "圣路易",
         "basel": "巴塞尔",
+        "rue": "街",
     }
-    for french_city, chinese_city in city_translations.items():
-        pattern = r"\b" + re.escape(french_city) + r"\b"
-        source = re.sub(pattern, chinese_city, source, flags=re.IGNORECASE)
+    for french, chinese in city_map.items():
+        source = re.sub(rf"\b{french}\b", chinese, source, flags=re.IGNORECASE)
 
-    translated = f" {source} "
-
-    # Comprehensive replacements organized by category
-    replacements = [
-        # Property type
-        (r"\bstudio\b", "单间"),
-        (r"\bappartement\b", "公寓"),
-        (r"\bmaison\b", "住宅"),
-        (r"\bt[12]\b", "T1或T2户型"),
-
-        # Furnishing
-        (r"\bmeubl[ée]?\b", "带家具"),
-        (r"\bnon meubl[ée]?\b", "不带家具"),
+    # ALL words and phrases to translate - most comprehensive list
+    word_map = {
+        # Property types
+        "appartement": "公寓",
+        "studio": "单间",
+        "maison": "住宅",
+        "t1": "一室",
+        "t2": "两室",
+        "t3": "三室",
+        "t4": "四室",
+        "f1": "一室",
+        "f2": "两室",
+        "f3": "三室",
+        "f4": "四室",
 
         # Rooms
-        (r"\bpi[eè]ce de vie\b", "起居空间"),
-        (r"\bséjour\b", "起居室"),
-        (r"\bsalle de bains?\b", "浴室"),
-        (r"\bsalle de douche\b", "淋浴间"),
-        (r"\bwc\b", "卫生间"),
-        (r"\bchambre\b", "卧室"),
-        (r"\bchambres?\b", "卧室"),
+        "pièce": "房间",
+        "pièces": "房间",
+        "chambre": "卧室",
+        "chambres": "卧室",
+        "séjour": "起居室",
+        "salon": "客厅",
+        "salle": "房间",
+        "bain": "浴室",
+        "douche": "淋浴",
+        "wc": "卫生间",
+        "toilettes": "卫生间",
+        "entrée": "入口",
+        "hall": "门厅",
 
         # Kitchen
-        (r"\bcuisine [ée]quip[ée]e\b", "配备齐全的厨房"),
-        (r"\bcuisine am[ée]nag[ée]e\b", "已配置厨房"),
-        (r"\bcoin cuisine\b", "小厨房"),
-        (r"\bcuisine\b", "厨房"),
+        "cuisine": "厨房",
+        "équipée": "配备齐全",
+        "aménagée": "已配置",
 
-        # Storage
-        (r"\bcave\b", "地窖/储物间"),
-        (r"\blocal v[ée]lo\b", "自行车储藏间"),
-        (r"\brangement\b", "储物空间"),
+        # Features
+        "balcon": "阳台",
+        "terrasse": "露台",
+        "jardin": "花园",
+        "parking": "停车位",
+        "garage": "车库",
+        "cave": "储物间",
+        "ascenseur": "电梯",
 
-        # Parking
-        (r"\bplace de parking priv[ée]e\b", "私人停车位"),
-        (r"\bparking privatif\b", "专属停车位"),
-        (r"\bparking\b", "停车位"),
-        (r"\bgarage\b", "车库"),
-
-        # Outdoor
-        (r"\bbalcon\b", "阳台"),
-        (r"\bterrasse\b", "露台"),
-        (r"\bjardin\b", "花园"),
-
-        # Building features
-        (r"\bascenseur\b", "电梯"),
-        (r"\br[ée]sidence\b", "住宅区"),
-        (r"\bpetite r[ée]sidence\b", "小型住宅区"),
-        (r"\bduplex\b", "复式"),
-        (r"\btriplex\b", "三层复式"),
-
-        # Location
-        (r"\bquartier calme\b", "安静街区"),
-        (r"\bproche fronti[èe]re\b", "靠近边境"),
-        (r"\bproche suisse\b", "靠近瑞士"),
-        (r"\bproche du tram\b", "靠近电车"),
-        (r"\bface au tram\b", "就在电车对面"),
-        (r"\bproche gare\b", "靠近火车站"),
-        (r"\bcentre[- ]ville\b", "市中心"),
+        # Furnishing
+        "meublé": "带家具",
+        "meublée": "带家具",
 
         # Condition
-        (r"\benti[èe]rement r[ée]nov[ée]\b", "全新翻修"),
-        (r"\brefait [àa] neuf\b", "全新翻修"),
-        (r"\bneuf\b", "全新"),
-        (r"\btr[èe]s beau\b", "非常不错"),
-        (r"\btr[èe]s belles prestations\b", "整体配置很好"),
-        (r"\bau calme\b", "环境安静"),
-        (r"\blumineux\b", "采光好"),
-        (r"\bbien agenc[ée]\b", "布局合理"),
-        (r"\bsol carrel[ée]\b", "瓷砖地面"),
-        (r"\bparquet\b", "木地板"),
+        "neuf": "全新",
+        "rénové": "翻新",
+        "calme": "安静",
+        "lumineux": "采光好",
+        "traversant": "通透",
+
+        # Size/Position
+        "environ": "约",
+        "surface": "面积",
+        "attique": "顶楼",
+        "vue": "视野",
+        "panoramique": "全景",
+
+        # Building/Location
+        "résidence": "住宅区",
+        "centre": "中心",
+        "hyper": "核心",
+        "rue": "街",
+        "place": "广场",
+        "avenue": "大道",
+        "boulevard": "大街",
+
+        # Equipment
+        "chauffage": "暖气",
+        "collectif": "集中",
+        "gaz": "燃气",
+        "climatisation": "空调",
+        "réversible": "可逆",
+        "double": "双层",
+        "vitrage": "玻璃",
+        "volets": "百叶窗",
+        "roulants": "卷帘",
+        "motorisés": "电动",
+
+        # Financial
+        "loyer": "租金",
+        "charges": "杂费",
+        "comprises": "包含",
+        "provision": "预付",
+        "honoraire": "中介费",
+        "honoraire": "中介费",
+        "dépot": "押金",
+        "dépôt": "押金",
+        "garantie": "保证金",
+        "montant": "金额",
+        "ttc": "含税",
+        "ht": "不含税",
+        "mois": "月",
 
         # Availability
-        (r"\b[àa] louer\b", "出租"),
-        (r"\blibre de suite\b", "可立即入住"),
-        (r"\blibre d[ée]but ao[ûu]t\b", "8月初可入住"),
-        (r"\blibre\b", "可入住"),
-        (r"\bdisponible\b", "可入住"),
-        (r"\blocation\b", "出租"),
+        "disponible": "可入住",
+        "libre": "空置",
+        "louer": "出租",
+        "location": "出租",
 
-        # Sizes
-        (r"\bgrande douche\b", "大淋浴间"),
-        (r"\bvaste pi[èe]ce principale\b", "宽敞主空间"),
-        (r"\bgrand s[ée]jour\b", "大起居室"),
+        # Common adjectives
+        "très": "非常",
+        "bon": "良好",
+        "beau": "美丽",
+        "grand": "大",
+        "petite": "小",
+        "petit": "小",
+        "nouveau": "新",
+        "ancien": "旧",
 
-        # Charges
-        (r"\bcharges comprises\b", "含杂费"),
-        (r"\bdont provision sur charges\b", "其中杂费预付款"),
-        (r"\bcharges\b", "杂费"),
+        # Connectors (mostly to be removed)
+        "avec": "含",
+        "sans": "无",
+        "pour": "用于",
+        "dans": "在",
+        "sur": "在",
 
-        # Fees
-        (r"\bhonoraires charge locataire\b", "租客承担中介费"),
-        (r"\bfrais de visite\b", "看房费用"),
-        (r"\br[ée]daction du bail\b", "合同起草费"),
-        (r"\br[ée]gularisation annuelle\b", "按年结算"),
-        (r"\bd[ée]p[oô]t de garantie\b", "押金"),
-        (r"\bcaution\b", "押金"),
+        # Technical terms
+        "classe": "等级",
+        "énergie": "能耗",
+        "climat": "气候",
+        "estimé": "估算",
+        "standard": "标准",
+        "usage": "使用",
+        "annuelles": "年度",
+        "compris": "包括",
+        "abonnements": "订阅费",
+        "risques": "风险",
+        "informations": "信息",
+        "disponibles": "可用",
+    }
 
-        # Contact phrases
-        (r"\bpour toutes demandes concernant ce bien, contactez directement\b", "如需咨询这套房源，请直接联系"),
-        (r"\bet pour plus d'informations concernant ce bien, contactez\b", "如需更多信息，请联系"),
-        (r"\bd[ée]couvrez\b", "可了解"),
-        (r"\bsitu[ée] dans\b", "位于"),
-        (r"\bil est\b", "房源为"),
-        (r"\b[àa] l'entr[ée]e\b", "入户处有"),
-        (r"\bde plus, vous trouverez\b", "另外还有"),
-        (r"\bce bien se compose de\b", "这套房源包括"),
-    ]
-    for pattern, replacement in replacements:
-        translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
+    # Apply all translations, longest first
+    sorted_words = sorted(word_map.items(), key=lambda x: len(x[0]), reverse=True)
+    translated = source
+    for french, chinese in sorted_words:
+        translated = re.sub(rf"\b{re.escape(french)}\b", chinese, translated, flags=re.IGNORECASE)
 
-    # Remove French connectors that remain
-    connectors = [
-        (r"\ble\b", ""),
-        (r"\bla\b", ""),
-        (r"\bles?\b", ""),
-        (r"\bun\b", "一个"),
-        (r"\bune\b", "一个"),
-        (r"\bde\b", ""),
-        (r"\bdes?\b", ""),
-        (r"\bet\b", "和"),
-        (r"\bou\b", "或"),
-        (r"\bavec\b", "包含"),
-        (r"\bsans\b", "无"),
-        (r"\bdans\b", "在"),
-        (r"\bsur\b", "在"),
-        (r"\bà\b", ""),
-        (r"\bpour\b", "为了"),
-    ]
-    for pattern, replacement in connectors:
-        translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
+    # Remove remaining French small words and articles
+    remove_list = ["le", "la", "les", "un", "une", "de", "des", "du", "au", "aux",
+                    "et", "ou", "en", "à", "par", "avec", "sans", "pour", "sur", "dans"]
+    for word in remove_list:
+        translated = re.sub(rf"\b{word}\b", "", translated, flags=re.IGNORECASE)
 
-    # Clean up spaces
+    # Clean up adjective endings
+    translated = re.sub(r"\bée\b", "", translated)
+    translated = re.sub(r"\bé\b", "", translated)
+    translated = re.sub(r"\bés\b", "", translated)
+
+    # Clean up spacing and punctuation
+    translated = re.sub(r"\s+", " ", translated)
+    translated = translated.replace(" ,", "，").replace(" .", "。").replace(" :", "：")
+    translated = translated.replace(" !", "！").replace(" ?", "？")
     translated = re.sub(r"\s+", " ", translated).strip()
-    # Fix punctuation
-    translated = translated.replace(" .", "。").replace(" !", "！").replace(" ?", "？").replace(" ,", ",").replace(" :", "：")
 
-    # If still mostly French (contains too many French words), return cleaner version
-    french_indicators = ['le ', 'la ', 'les ', 'un ', 'une ', 'de ', 'des ', 'et ', 'ou ', 'dans ', 'sur ', 'pour ']
-    remaining_french = sum(1 for indicator in french_indicators if indicator in translated.lower())
-    if remaining_french > 3:
-        # Still too much French mixed in, return a cleaner summary
-        return "已识别主要房源信息（原文含较多法文内容，可查看原始描述了解详情）"
+    # Clean up any orphaned words (words that became isolated)
+    translated = re.sub(r"\b[a-zA-Z]\b", "", translated)
+
+    # Final check - if still looks like too much French, return summary
+    # Count remaining French-like patterns
+    french_pattern_count = len(re.findall(r"\b[a-z]{3,}\b", translated.lower()))
+    if french_pattern_count > 10:
+        return "已识别主要房源信息。详细描述包含较多专业术语和法文内容，建议查看原始描述了解完整信息。"
 
     return translated if translated else "暂无描述。"
 
@@ -1370,7 +1400,12 @@ def build_filters(sidebar_defaults):
     with st.sidebar:
         st.header("房源筛选")
 
-        city = st.selectbox("地区", TRACKED_PLACES, index=TRACKED_PLACES.index(sidebar_defaults["location"]) if sidebar_defaults["location"] in TRACKED_PLACES else 0)
+        city = st.selectbox(
+            "地区",
+            TRACKED_PLACES,
+            format_func=lambda v: TRACKED_PLACES_ZH.get(v, v),
+            index=TRACKED_PLACES.index(sidebar_defaults["location"]) if sidebar_defaults["location"] in TRACKED_PLACES else 0
+        )
         price_range = st.slider(
             "月租范围（欧元）",
             min_value=0,
