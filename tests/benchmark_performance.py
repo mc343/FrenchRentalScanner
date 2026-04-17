@@ -11,8 +11,9 @@ Target: 2-3x speedup (90s -> 30-45s for 3 sources)
 import sys
 import os
 import time
+import random
 from typing import Dict, List, Callable
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -217,7 +218,6 @@ def benchmark_full_scan_duration() -> Dict:
         def search(self, filters: Dict) -> List[Dict]:
             """Simulate scraping with variable delay."""
             # Add some randomness to simulate real-world conditions
-            import random
             delay = self.base_delay + random.uniform(-2, 2)
             delay = max(5, delay)  # Minimum 5s
             time.sleep(delay)
