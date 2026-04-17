@@ -74,3 +74,4 @@ release/
 
 # Git Worktrees
 .worktrees/
+.vercel
