@@ -613,6 +613,39 @@ def translate_feature_text(value):
     return text
 
 
+def translate_city_name(city):
+    """Translate French city names to Chinese."""
+    if not city:
+        return "位置未知"
+
+    city_mapping = {
+        "huningue": "洛南格",
+        "mulhouse": "米卢斯",
+        "saint-louis": "圣路易",
+        "st-louis": "圣路易",
+        "basel": "巴塞尔",
+        "hesingue": "埃桑格",
+        "hegenheim": "埃根海姆",
+        "blotzheim": "布洛茨海姆",
+        "bartenheim": "巴滕海姆",
+        "sierentz": "西昂茨",
+        "kembs": "肯布斯",
+        "landser": "朗瑟",
+        "riedisheim": "里迪赛姆",
+        "illzach": "伊尔扎赫",
+        "wittenheim": "维滕海姆",
+        "sausheim": "索赛姆",
+        "kingersheim": "金格斯海姆",
+        "altkirch": "阿尔特基尔什",
+        "colmar": "科尔马",
+        "guebwiller": "盖布维莱",
+        "cernay": "塞尔奈",
+        "thann": "坦恩",
+        "ferrette": "费雷特",
+    }
+    return city_mapping.get(str(city).strip().lower(), city)
+
+
 def translate_property_type_text(value):
     """Translate property type labels into Chinese."""
     mapping = {
@@ -630,6 +663,18 @@ def translate_listing_title(title):
     text = str(title or "").strip()
     if not text:
         return "未命名房源"
+
+    # First translate city names
+    city_translations = {
+        "huningue": "洛南格",
+        "mulhouse": "米卢斯",
+        "saint-louis": "圣路易",
+        "basel": "巴塞尔",
+    }
+    for french_city, chinese_city in city_translations.items():
+        # Use word boundaries to avoid partial matches
+        pattern = r"\b" + re.escape(french_city) + r"\b"
+        text = re.sub(pattern, chinese_city, text, flags=re.IGNORECASE)
 
     replacements = [
         (r"\bappartement\b", "公寓"),
@@ -659,6 +704,11 @@ def translate_listing_title(title):
     for pattern, replacement in replacements:
         translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
 
+    # Remove any remaining French connectors and clean up
+    connectors = [r"\bà\b", r"\bdans\b", r"\bavec\b", r"\bsans\b", r"\bet\b", r"\bou\b"]
+    for connector in connectors:
+        translated = re.sub(connector, "", translated, flags=re.IGNORECASE)
+
     translated = re.sub(r"\s+", " ", translated).strip(" -|")
     return translated or text
 
@@ -671,80 +721,163 @@ def translate_description_text(text):
     if not source:
         return "暂无描述。"
 
+    # First translate city names
+    city_translations = {
+        "huningue": "洛南格",
+        "mulhouse": "米卢斯",
+        "saint-louis": "圣路易",
+        "basel": "巴塞尔",
+    }
+    for french_city, chinese_city in city_translations.items():
+        pattern = r"\b" + re.escape(french_city) + r"\b"
+        source = re.sub(pattern, chinese_city, source, flags=re.IGNORECASE)
+
     translated = f" {source} "
+
+    # Comprehensive replacements organized by category
     replacements = [
-        (r"\bà louer\b", "出租"),
-        (r"\blibre de suite\b", "可立即入住"),
-        (r"\blibre début août\b", "8月初可入住"),
-        (r"\blibre\b", "可入住"),
+        # Property type
         (r"\bstudio\b", "单间"),
         (r"\bappartement\b", "公寓"),
         (r"\bmaison\b", "住宅"),
+        (r"\bt[12]\b", "T1或T2户型"),
+
+        # Furnishing
         (r"\bmeubl[ée]?\b", "带家具"),
         (r"\bnon meubl[ée]?\b", "不带家具"),
+
+        # Rooms
         (r"\bpi[eè]ce de vie\b", "起居空间"),
-        (r"\bcuisine équipée\b", "配备齐全的厨房"),
-        (r"\bcuisine aménagée\b", "已配置厨房"),
-        (r"\bcoin cuisine\b", "小厨房"),
-        (r"\bsalle de bains\b", "浴室"),
+        (r"\bséjour\b", "起居室"),
+        (r"\bsalle de bains?\b", "浴室"),
         (r"\bsalle de douche\b", "淋浴间"),
         (r"\bwc\b", "卫生间"),
         (r"\bchambre\b", "卧室"),
-        (r"\bchambres\b", "卧室"),
+        (r"\bchambres?\b", "卧室"),
+
+        # Kitchen
+        (r"\bcuisine [ée]quip[ée]e\b", "配备齐全的厨房"),
+        (r"\bcuisine am[ée]nag[ée]e\b", "已配置厨房"),
+        (r"\bcoin cuisine\b", "小厨房"),
+        (r"\bcuisine\b", "厨房"),
+
+        # Storage
         (r"\bcave\b", "地窖/储物间"),
-        (r"\blocal vélo\b", "自行车储藏间"),
-        (r"\bplace de parking privée\b", "私人停车位"),
+        (r"\blocal v[ée]lo\b", "自行车储藏间"),
+        (r"\brangement\b", "储物空间"),
+
+        # Parking
+        (r"\bplace de parking priv[ée]e\b", "私人停车位"),
         (r"\bparking privatif\b", "专属停车位"),
         (r"\bparking\b", "停车位"),
+        (r"\bgarage\b", "车库"),
+
+        # Outdoor
         (r"\bbalcon\b", "阳台"),
         (r"\bterrasse\b", "露台"),
+        (r"\bjardin\b", "花园"),
+
+        # Building features
         (r"\bascenseur\b", "电梯"),
         (r"\br[ée]sidence\b", "住宅区"),
         (r"\bpetite r[ée]sidence\b", "小型住宅区"),
+        (r"\bduplex\b", "复式"),
+        (r"\btriplex\b", "三层复式"),
+
+        # Location
         (r"\bquartier calme\b", "安静街区"),
-        (r"\bproche frontière\b", "靠近边境"),
+        (r"\bproche fronti[èe]re\b", "靠近边境"),
         (r"\bproche suisse\b", "靠近瑞士"),
         (r"\bproche du tram\b", "靠近电车"),
         (r"\bface au tram\b", "就在电车对面"),
         (r"\bproche gare\b", "靠近火车站"),
-        (r"\bcentre ville\b", "市中心"),
-        (r"\bcentre-ville\b", "市中心"),
-        (r"\bentièrement rénové[e]?\b", "全新翻修"),
-        (r"\brefait à neuf\b", "全新翻修"),
-        (r"\btrès beau\b", "非常不错"),
-        (r"\btrès belles prestations\b", "整体配置很好"),
+        (r"\bcentre[- ]ville\b", "市中心"),
+
+        # Condition
+        (r"\benti[èe]rement r[ée]nov[ée]\b", "全新翻修"),
+        (r"\brefait [àa] neuf\b", "全新翻修"),
+        (r"\bneuf\b", "全新"),
+        (r"\btr[èe]s beau\b", "非常不错"),
+        (r"\btr[èe]s belles prestations\b", "整体配置很好"),
         (r"\bau calme\b", "环境安静"),
         (r"\blumineux\b", "采光好"),
-        (r"\bbien agencé\b", "布局合理"),
-        (r"\bsol carrelé\b", "瓷砖地面"),
+        (r"\bbien agenc[ée]\b", "布局合理"),
+        (r"\bsol carrel[ée]\b", "瓷砖地面"),
+        (r"\bparquet\b", "木地板"),
+
+        # Availability
+        (r"\b[àa] louer\b", "出租"),
+        (r"\blibre de suite\b", "可立即入住"),
+        (r"\blibre d[ée]but ao[ûu]t\b", "8月初可入住"),
+        (r"\blibre\b", "可入住"),
+        (r"\bdisponible\b", "可入住"),
+        (r"\blocation\b", "出租"),
+
+        # Sizes
         (r"\bgrande douche\b", "大淋浴间"),
-        (r"\bvaste pièce principale\b", "宽敞主空间"),
+        (r"\bvaste pi[èe]ce principale\b", "宽敞主空间"),
+        (r"\bgrand s[ée]jour\b", "大起居室"),
+
+        # Charges
         (r"\bcharges comprises\b", "含杂费"),
         (r"\bdont provision sur charges\b", "其中杂费预付款"),
+        (r"\bcharges\b", "杂费"),
+
+        # Fees
         (r"\bhonoraires charge locataire\b", "租客承担中介费"),
         (r"\bfrais de visite\b", "看房费用"),
-        (r"\brédaction du bail\b", "合同起草费"),
-        (r"\brégularisation annuelle\b", "按年结算"),
+        (r"\br[ée]daction du bail\b", "合同起草费"),
+        (r"\br[ée]gularisation annuelle\b", "按年结算"),
+        (r"\bd[ée]p[oô]t de garantie\b", "押金"),
+        (r"\bcaution\b", "押金"),
+
+        # Contact phrases
+        (r"\bpour toutes demandes concernant ce bien, contactez directement\b", "如需咨询这套房源，请直接联系"),
+        (r"\bet pour plus d'informations concernant ce bien, contactez\b", "如需更多信息，请联系"),
+        (r"\bd[ée]couvrez\b", "可了解"),
+        (r"\bsitu[ée] dans\b", "位于"),
+        (r"\bil est\b", "房源为"),
+        (r"\b[àa] l'entr[ée]e\b", "入户处有"),
+        (r"\bde plus, vous trouverez\b", "另外还有"),
+        (r"\bce bien se compose de\b", "这套房源包括"),
     ]
     for pattern, replacement in replacements:
         translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
 
-    sentence_fixes = [
-        (r"\bpour toutes demandes concernant ce bien, contactez directement\b", "如需咨询这套房源，请直接联系"),
-        (r"\bet pour plus d'informations concernant ce bien, contactez\b", "如需更多信息，请联系"),
-        (r"\bdécouvrez\b", "可了解"),
-        (r"\bsitué dans\b", "位于"),
-        (r"\bil est\b", "房源为"),
-        (r"\bà l'entrée\b", "入户处有"),
-        (r"\bde plus, vous trouverez\b", "另外还有"),
-        (r"\bce bien se compose de\b", "这套房源包括"),
+    # Remove French connectors that remain
+    connectors = [
+        (r"\ble\b", ""),
+        (r"\bla\b", ""),
+        (r"\bles?\b", ""),
+        (r"\bun\b", "一个"),
+        (r"\bune\b", "一个"),
+        (r"\bde\b", ""),
+        (r"\bdes?\b", ""),
+        (r"\bet\b", "和"),
+        (r"\bou\b", "或"),
+        (r"\bavec\b", "包含"),
+        (r"\bsans\b", "无"),
+        (r"\bdans\b", "在"),
+        (r"\bsur\b", "在"),
+        (r"\bà\b", ""),
+        (r"\bpour\b", "为了"),
     ]
-    for pattern, replacement in sentence_fixes:
+    for pattern, replacement in connectors:
         translated = re.sub(pattern, replacement, translated, flags=re.IGNORECASE)
 
+    # Clean up spaces
     translated = re.sub(r"\s+", " ", translated).strip()
-    translated = translated.replace(" !", "！").replace(" ?", "？")
-    return translated
+    # Fix punctuation
+    translated = translated.replace(" .", "。").replace(" !", "！").replace(" ?", "？").replace(" ,", ",").replace(" :", "：")
+
+    # If still mostly French (contains too many French words), return cleaner version
+    french_indicators = ['le ', 'la ', 'les ', 'un ', 'une ', 'de ', 'des ', 'et ', 'ou ', 'dans ', 'sur ', 'pour ']
+    remaining_french = sum(1 for indicator in french_indicators if indicator in translated.lower())
+    if remaining_french > 3:
+        # Still too much French mixed in, return a cleaner summary
+        return "已识别主要房源信息（原文含较多法文内容，可查看原始描述了解详情）"
+
+    return translated if translated else "暂无描述。"
 
 
 def closest_public_transport_distance(listing):
@@ -1425,6 +1558,10 @@ def render_compare_strip(listings):
 def render_listing_selector(listings):
     """Render the left-side browser and selection actions."""
     st.caption("选择一条房源查看")
+
+    # Wrap all cards in a scrollable div
+    st.markdown('<div class="listing-scroll-panel">', unsafe_allow_html=True)
+
     for listing in listings:
         st.markdown('<div class="listing-card">', unsafe_allow_html=True)
         preview_col, text_col = st.columns([0.9, 1.5], gap="small")
@@ -1438,8 +1575,11 @@ def render_listing_selector(listings):
         with text_col:
             st.markdown(f"**{translate_listing_title(listing.title)}**")
             st.markdown(f'<div class="listing-price">{format_price(listing.price)}</div>', unsafe_allow_html=True)
+
+            # Translate city name
+            display_location = translate_city_name(listing.location or listing.city)
             st.markdown(
-                f'<div class="listing-meta">{format_area(listing.area)} · {listing.location or listing.city or "位置未知"}</div>',
+                f'<div class="listing-meta">{format_area(listing.area)} · {display_location}</div>',
                 unsafe_allow_html=True,
             )
             # Public Transportation Distance Indicator 🚇
@@ -1461,6 +1601,8 @@ def render_listing_selector(listings):
                 toggle_compare(listing.id)
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_photo_gallery(listing):
@@ -1532,8 +1674,11 @@ def render_listing_detail(db, listing):
     title_col, action_col = st.columns([3, 1])
     with title_col:
         st.markdown(f"## {translate_listing_title(listing.title)}")
+
+        # Translate city name
+        display_location = translate_city_name(listing.location or listing.city)
         st.markdown(
-            f'<div class="detail-topline">{listing.source} | {listing.location or listing.city or "位置未知"} | {format_price(listing.price)} | {format_area(listing.area)}</div>',
+            f'<div class="detail-topline">{listing.source} | {display_location} | {format_price(listing.price)} | {format_area(listing.area)}</div>',
             unsafe_allow_html=True,
         )
         render_badge_row(score_badges(listing))
