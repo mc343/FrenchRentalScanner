@@ -1107,10 +1107,6 @@ def matches_description_filters(listing, ui_filters):
         furniture_values = extracted_map.get("家具", [])
         if "带家具" not in furniture_values:
             return False
-    if ui_filters.get("need_border"):
-        commute_values = extracted_map.get("通勤", [])
-        if "靠近瑞士边境" not in commute_values and "靠近步行桥" not in commute_values:
-            return False
     if ui_filters.get("need_elevator"):
         building_values = extracted_map.get("楼宇", [])
         if "有电梯" not in building_values:
@@ -1450,7 +1446,6 @@ def build_filters(sidebar_defaults):
         need_parking = st.checkbox("只看提到停车的房源", value=False)
         need_balcony = st.checkbox("只看提到阳台/露台的房源", value=False)
         need_furnished = st.checkbox("只看带家具房源", value=False)
-        need_border = st.checkbox("只看靠近边境/步行桥的房源", value=False)
         need_elevator = st.checkbox("只看提到电梯的房源", value=False)
 
         st.divider()
@@ -1493,7 +1488,6 @@ def build_filters(sidebar_defaults):
         "need_parking": need_parking,
         "need_balcony": need_balcony,
         "need_furnished": need_furnished,
-        "need_border": need_border,
         "need_elevator": need_elevator,
         "availability_within_3_months": availability_within_3_months,
         "availability_3_to_4_months": availability_3_to_4_months,
