@@ -1594,9 +1594,6 @@ def render_listing_selector(listings):
     """Render the left-side browser and selection actions."""
     st.caption("选择一条房源查看")
 
-    # Wrap all cards in a scrollable div
-    st.markdown('<div class="listing-scroll-panel">', unsafe_allow_html=True)
-
     for listing in listings:
         st.markdown('<div class="listing-card">', unsafe_allow_html=True)
         preview_col, text_col = st.columns([0.9, 1.5], gap="small")
@@ -1636,8 +1633,6 @@ def render_listing_selector(listings):
                 toggle_compare(listing.id)
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_photo_gallery(listing):
@@ -1843,7 +1838,8 @@ def render_listing_browser(db, listings):
 
     left_col, right_col = st.columns([1.05, 1.6], gap="large")
     with left_col:
-        with st.container(height=980, border=False):
+        # Streamlit's container with height parameter enables scrolling
+        with st.container(height=700, border=True):
             render_listing_selector(listings)
 
     listing_map = {listing.id: listing for listing in listings}
