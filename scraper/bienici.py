@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from .base import BaseScraper, logger
+from .cache_manager import CacheManager
 
 
 class BieniciScraper(BaseScraper):
@@ -25,6 +26,7 @@ class BieniciScraper(BaseScraper):
     def __init__(self, config: Dict = None):
         super().__init__(config)
         self.name = "Bienici"
+        self.cache_manager = CacheManager()
 
     def search(self, filters: Dict) -> List[Dict]:
         """Search Bien'ici for rental listings."""
@@ -100,15 +102,58 @@ class BieniciScraper(BaseScraper):
         return payload
 
     def _request_json(self, url: str, params: Dict) -> Optional[Dict]:
-        """Request a JSON payload from Bien'ici."""
-        try:
-            response = self.session.get(url, params=params, timeout=20)
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            self.last_error = str(exc)
-            logger.error(f"Bien'ici request failed: {exc}")
-            return None
+        """Request a JSON payload from Bien'ici with cache integration and retry support."""
+        import time
+        import urllib.parse
+
+        # Build full URL for caching
+        full_url = f"{url}?{urllib.parse.urlencode(params)}" if params else url
+
+        # Check cache first
+        cached_page = self.cache_manager.get_page(full_url)
+        if cached_page is not None:
+            logger.info(f"Cache hit for {url}")
+            try:
+                import json
+                return json.loads(cached_page)
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid cached JSON for {url}, fetching from network")
+
+        # Cache miss - fetch from network with retry logic
+        max_retries = 3
+        base_timeout = 10
+        timeout_increment = 30
+
+        for attempt in range(max_retries):
+            current_timeout = base_timeout + (attempt * timeout_increment)  # 10s, 40s, 70s
+
+            try:
+                response = self.session.get(url, params=params, timeout=current_timeout)
+                response.raise_for_status()
+
+                # Parse JSON response
+                data = response.json()
+
+                # Store in cache
+                try:
+                    import json
+                    json_content = json.dumps(data)
+                    self.cache_manager.set_page(full_url, json_content)
+                    logger.info(f"Cached response for {url}")
+                except Exception as cache_exc:
+                    logger.warning(f"Failed to cache response: {cache_exc}")
+
+                return data
+
+            except Exception as exc:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 1s, 2s, 4s exponential backoff
+                    logger.warning(f"Attempt {attempt + 1} failed for {url}: {exc}, retrying in {wait_time}s")
+                    time.sleep(wait_time)
+                else:
+                    self.last_error = str(exc)
+                    logger.error(f"Bien'ici request failed after {max_retries} attempts: {exc}")
+                    return None
 
     def _parse_ad(self, ad: Dict) -> Optional[Dict]:
         """Normalize a Bien'ici ad into the app listing format."""
