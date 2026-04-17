@@ -5,6 +5,7 @@ Scans Bien'ici for rental apartments and houses in the current target locations,
 stores them in a database, and provides a dashboard for review and analysis.
 """
 import argparse
+import logging
 import os
 import re
 import subprocess
@@ -14,7 +15,6 @@ from typing import Dict, List
 
 from scraper import BieniciScraper, LogicImmoScraper, PAPScraper
 from scraper.parallel_scanner import ParallelScanner
-from scraper.cache_manager import CacheManager
 from database import DatabaseManager
 
 SCRAPER_REGISTRY = {
@@ -121,6 +121,9 @@ def dedupe_listings(listings: List[Dict]) -> List[Dict]:
 
 def run_scan(filters: dict = None, sources: list = None) -> dict:
     """Run scans for the selected websites and persist results."""
+    # Configure logging to capture ParallelScanner output
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+
     filters = filters or default_filters()
     selected_sources = sources or ACTIVE_SOURCES
 
