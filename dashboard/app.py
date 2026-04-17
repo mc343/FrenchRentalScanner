@@ -1891,20 +1891,23 @@ def render_contact_queue(db):
 
 
 def render_analytics(db):
-    """Render the analytics view."""
+    """Render the analytics view with price/m² statistics by property type."""
     st.subheader("市场分析")
     listings = db.get_listings(limit=500)
     if not listings:
         st.info("目前还没有足够数据生成分析。")
         return
 
+    # Build DataFrame with property type info
     df = pd.DataFrame(
         [
             {
+                "id": listing.id,
                 "price": listing.price,
                 "area": listing.area,
                 "city": listing.city,
                 "source": listing.source,
+                "property_type": listing.property_type or "unknown",
                 "price_per_m2": listing.price / listing.area if listing.area else 0,
                 "rating": listing.personal_rating,
             }
@@ -1916,13 +1919,139 @@ def render_analytics(db):
         st.info("Not enough structured data for charts yet.")
         return
 
+    # Separate by property type
+    df_apartments = df[df["property_type"] == "apartment"].copy()
+    df_houses = df[df["property_type"] == "house"].copy()
+
+    # Get currently selected listing for comparison
+    current_listing = None
+    if st.session_state.get("selected_listing_id"):
+        listing_map = {listing.id: listing for listing in listings}
+        current_listing = listing_map.get(st.session_state.selected_listing_id)
+
+    # Display statistics cards
+    st.markdown("### 每平米租金分布")
+
+    # Calculate stats for each property type
+    stats_data = []
+
+    for prop_type, prop_name, prop_zh in [
+        ("apartment", "Apartment", "公寓"),
+        ("house", "House", "独栋"),
+    ]:
+        df_type = df[df["property_type"] == prop_type]
+        if len(df_type) >= 3:
+            price_per_m2 = df_type["price_per_m2"].dropna()
+            if len(price_per_m2) > 0:
+                median_val = price_per_m2.median()
+                q25 = price_per_m2.quantile(0.25)
+                q75 = price_per_m2.quantile(0.75)
+
+                # Check where current listing stands
+                current_indicator = ""
+                current_color = "gray"
+                if current_listing and current_listing.property_type == prop_type:
+                    current_ppm2 = current_listing.price / current_listing.area if current_listing.area else None
+                    if current_ppm2:
+                        if current_ppm2 <= q25:
+                            current_indicator = "↓ 低于25%"
+                            current_color = "green"
+                        elif current_ppm2 <= median_val:
+                            current_indicator = "✓ 低于中位数"
+                            current_color = "blue"
+                        elif current_ppm2 <= q75:
+                            current_indicator = "↑ 高于中位数"
+                            current_color = "orange"
+                        else:
+                            current_indicator = "↑↑ 高于75%"
+                            current_color = "red"
+
+                stats_data.append({
+                    "类型": prop_zh,
+                    "房源数量": len(df_type),
+                    "中位数 (€/m²)": f"€{median_val:.1f}",
+                    "25%分位": f"€{q25:.1f}",
+                    "75%分位": f"€{q75:.1f}",
+                    "当前房源": current_indicator if current_indicator else "-",
+                })
+
+    if stats_data:
+        stats_df = pd.DataFrame(stats_data)
+        st.dataframe(stats_df, use_container_width=True, hide_index=True)
+
+        # Show detailed interpretation if a listing is selected
+        if current_listing and current_listing.area:
+            current_ppm2 = current_listing.price / current_listing.area
+            st.markdown(f"**当前房源每平米: €{current_ppm2:.1f}**")
+
+            # Find which type it belongs to and show comparison
+            prop_type = current_listing.property_type or "apartment"
+            df_type = df[df["property_type"] == prop_type]
+            if len(df_type) > 0:
+                price_per_m2 = df_type["price_per_m2"].dropna()
+                percentile = (price_per_m2 <= current_ppm2).sum() / len(price_per_m2) * 100
+                median_val = price_per_m2.median()
+
+                if current_ppm2 <= median_val:
+                    comparison = f"低于 {percentile:.0f}% 的{prop_type}房源"
+                else:
+                    comparison = f"高于 {100-percentile:.0f}% 的{prop_type}房源"
+
+                st.info(f"📊 **市场对比:** {comparison}")
+
+    # Charts
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.histogram(df, x="price", nbins=40, color="source", title="Rent distribution")
+        fig = px.histogram(df, x="price", nbins=40, color="property_type",
+                        title="租金分布", labels={"property_type": "房型"})
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        fig = px.scatter(df, x="area", y="price", color="source", hover_data=["city", "rating"], title="Price vs area")
+        fig = px.scatter(df, x="area", y="price", color="property_type",
+                        hover_data=["city", "rating"], title="面积 vs 租金")
+        # Highlight current listing if selected
+        if current_listing and current_listing.area and current_listing.price:
+            fig.add_scatter(
+                x=[current_listing.area],
+                y=[current_listing.price],
+                mode="markers",
+                marker=dict(size=20, color="red", symbol="star"),
+                name="当前房源"
+            )
         st.plotly_chart(fig, use_container_width=True)
+
+    # Price per m² distribution by property type
+    st.markdown("### 每平米租金分布 (按房型)")
+    if not df_apartments.empty:
+        st.markdown("**公寓每平米租金分布**")
+        fig_apts = px.histogram(df_apartments, x="price_per_m2", nbins=30,
+                               title="公寓 - 每平米租金 (€/m²)",
+                               labels={"price_per_m2": "每平米租金 (€/m²)"})
+        # Add median line
+        median_apts = df_apartments["price_per_m2"].median()
+        fig_apts.add_vline(x=median_apts, line_dash="dash", line_color="red",
+                          annotation_text=f"中位数: €{median_apts:.1f}/m²")
+        # Highlight current listing if it's an apartment
+        if current_listing and current_listing.property_type == "apartment" and current_listing.area:
+            current_ppm2 = current_listing.price / current_listing.area
+            fig_apts.add_vline(x=current_ppm2, line_dash="solid", line_color="blue",
+                              annotation_text=f"当前: €{current_ppm2:.1f}/m²")
+        st.plotly_chart(fig_apts, use_container_width=True)
+
+    if not df_houses.empty:
+        st.markdown("**独栋每平米租金分布**")
+        fig_houses = px.histogram(df_houses, x="price_per_m2", nbins=30,
+                                title="独栋 - 每平米租金 (€/m²)",
+                                labels={"price_per_m2": "每平米租金 (€/m²)"})
+        # Add median line
+        median_houses = df_houses["price_per_m2"].median()
+        fig_houses.add_vline(x=median_houses, line_dash="dash", line_color="red",
+                            annotation_text=f"中位数: €{median_houses:.1f}/m²")
+        # Highlight current listing if it's a house
+        if current_listing and current_listing.property_type == "house" and current_listing.area:
+            current_ppm2 = current_listing.price / current_listing.area
+            fig_houses.add_vline(x=current_ppm2, line_dash="solid", line_color="blue",
+                              annotation_text=f"当前: €{current_ppm2:.1f}/m²")
+        st.plotly_chart(fig_houses, use_container_width=True)
 
 
 def main():
