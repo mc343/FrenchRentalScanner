@@ -1,6 +1,9 @@
 """
 Bien'ici scraper - automated rental search via Bien'ici JSON endpoints.
 """
+import json
+import time
+import urllib.parse
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -22,6 +25,11 @@ class BieniciScraper(BaseScraper):
         "Huningue": {"city": "Huningue", "postal_codes": {"68330"}},
         "Mulhouse": {"city": "Mulhouse", "postal_codes": {"68100", "68200"}},
     }
+
+    # Retry configuration constants
+    BASE_TIMEOUT = 10
+    TIMEOUT_INCREMENT = 30
+    MAX_RETRIES = 3
 
     def __init__(self, config: Dict = None):
         super().__init__(config)
@@ -102,30 +110,32 @@ class BieniciScraper(BaseScraper):
         return payload
 
     def _request_json(self, url: str, params: Dict) -> Optional[Dict]:
-        """Request a JSON payload from Bien'ici with cache integration and retry support."""
-        import time
-        import urllib.parse
+        """Request a JSON payload from Bien'ici with cache integration and retry support.
 
-        # Build full URL for caching
+        Cache behavior: Responses are cached for 2 hours (7200 seconds) by CacheManager.
+        The cache key is constructed from the full URL including query parameters to ensure
+        different requests produce different cache entries.
+        """
+        # Build full URL for caching - this must match the actual request URL
         full_url = f"{url}?{urllib.parse.urlencode(params)}" if params else url
 
         # Check cache first
         cached_page = self.cache_manager.get_page(full_url)
         if cached_page is not None:
-            logger.info(f"Cache hit for {url}")
+            logger.info(f"Cache hit for {full_url}")
             try:
-                import json
                 return json.loads(cached_page)
             except json.JSONDecodeError:
-                logger.warning(f"Invalid cached JSON for {url}, fetching from network")
+                logger.warning(f"Invalid cached JSON for {full_url}, removing from cache")
+                # Remove invalid cache entry to prevent repeated failures
+                try:
+                    del self.cache_manager.page_cache[full_url]
+                except KeyError:
+                    pass  # Entry already removed or doesn't exist
 
         # Cache miss - fetch from network with retry logic
-        max_retries = 3
-        base_timeout = 10
-        timeout_increment = 30
-
-        for attempt in range(max_retries):
-            current_timeout = base_timeout + (attempt * timeout_increment)  # 10s, 40s, 70s
+        for attempt in range(self.MAX_RETRIES):
+            current_timeout = self.BASE_TIMEOUT + (attempt * self.TIMEOUT_INCREMENT)  # 10s, 40s, 70s
 
             try:
                 response = self.session.get(url, params=params, timeout=current_timeout)
@@ -136,23 +146,22 @@ class BieniciScraper(BaseScraper):
 
                 # Store in cache
                 try:
-                    import json
                     json_content = json.dumps(data)
                     self.cache_manager.set_page(full_url, json_content)
-                    logger.info(f"Cached response for {url}")
+                    logger.info(f"Cached response for {full_url}")
                 except Exception as cache_exc:
                     logger.warning(f"Failed to cache response: {cache_exc}")
 
                 return data
 
             except Exception as exc:
-                if attempt < max_retries - 1:
+                if attempt < self.MAX_RETRIES - 1:
                     wait_time = 2 ** attempt  # 1s, 2s, 4s exponential backoff
-                    logger.warning(f"Attempt {attempt + 1} failed for {url}: {exc}, retrying in {wait_time}s")
+                    logger.warning(f"Attempt {attempt + 1} failed for {full_url}: {exc}, retrying in {wait_time}s")
                     time.sleep(wait_time)
                 else:
                     self.last_error = str(exc)
-                    logger.error(f"Bien'ici request failed after {max_retries} attempts: {exc}")
+                    logger.error(f"Bien'ici request failed after {self.MAX_RETRIES} attempts: {exc}")
                     return None
 
     def _parse_ad(self, ad: Dict) -> Optional[Dict]:
@@ -263,6 +272,4 @@ class BieniciScraper(BaseScraper):
 
     def _json_dumps(self, value: Dict) -> str:
         """Serialize payload to compact JSON."""
-        import json
-
         return json.dumps(value, separators=(",", ":"))
