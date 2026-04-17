@@ -9,9 +9,12 @@ import os
 import re
 import subprocess
 import sys
+import time
 from typing import Dict, List
 
 from scraper import BieniciScraper, LogicImmoScraper, PAPScraper
+from scraper.parallel_scanner import ParallelScanner
+from scraper.cache_manager import CacheManager
 from database import DatabaseManager
 
 SCRAPER_REGISTRY = {
@@ -121,27 +124,21 @@ def run_scan(filters: dict = None, sources: list = None) -> dict:
     filters = filters or default_filters()
     selected_sources = sources or ACTIVE_SOURCES
 
+    start_time = time.time()
+
+    # Use ParallelScanner for concurrent scraping
+    parallel_scanner = ParallelScanner(
+        timeout=150,
+        max_workers=3,
+        scraper_registry=SCRAPER_REGISTRY
+    )
+    scan_result = parallel_scanner.scan(filters, selected_sources)
+    raw_listings = scan_result["raw_listings"]
+    per_source_results = scan_result["per_source_results"]
+
+    scan_duration = time.time() - start_time
+
     db = DatabaseManager(DEFAULT_DB_PATH)
-    raw_listings = []
-    per_source_results = {}
-
-    for source in selected_sources:
-        scraper_cls = SCRAPER_REGISTRY.get(source)
-        if not scraper_cls:
-            per_source_results[source] = {"count": 0, "error": f"Unknown source: {source}"}
-            continue
-
-        try:
-            scraper = scraper_cls()
-            source_listings = scraper.search(filters)
-            raw_listings.extend(source_listings)
-            per_source_results[source] = {
-                "count": len(source_listings),
-                "error": getattr(scraper, "last_error", None),
-            }
-        except Exception as exc:
-            per_source_results[source] = {"count": 0, "error": str(exc)}
-
     deduped_listings = dedupe_listings(raw_listings)
     if deduped_listings:
         store_summary = db.add_listings_batch(deduped_listings, return_summary=True)
@@ -174,6 +171,7 @@ def run_scan(filters: dict = None, sources: list = None) -> dict:
         "store_error_count": store_summary.get("error_count", 0),
         "per_source_results": per_source_results,
         "stats": db.get_stats(),
+        "scan_duration": scan_duration,
     }
 
 
@@ -192,6 +190,11 @@ def scan_listings(filters: dict = None, sources: list = None):
     print()
 
     result = run_scan(filters, sources=sources)
+
+    # Display scan timing
+    scan_duration = result.get("scan_duration", 0)
+    print(f"Scan completed in {scan_duration:.1f} seconds")
+    print()
 
     for source in result["sources"]:
         source_result = result["per_source_results"].get(source, {})
