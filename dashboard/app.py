@@ -1832,23 +1832,23 @@ def render_listing_browser(db, listings):
 
     left_col, right_col = st.columns([1.05, 1.6], gap="large")
     with left_col:
-        # Add CSS to make the listing panel fill available vertical space
+        # Add CSS to make the listing panel fill nearly all vertical space
         st.markdown("""
             <style>
-            /* Make left panel container fill most of the viewport height */
+            /* Make left panel container fill almost all viewport height */
             [data-testid="stVerticalBlock"]:has([data-testid="stContainer"] > div[data-testid="stVerticalBlock"]) {
-                height: 85vh !important;
+                height: 95vh !important;
             }
             /* Target the container inside left column */
             .main [data-testid="column"] > div[data-testid="stVerticalBlock"] > div[data-testid="stContainer"] {
-                max-height: 85vh !important;
+                max-height: 95vh !important;
                 overflow-y: auto !important;
             }
             </style>
         """, unsafe_allow_html=True)
 
-        # Use a larger height for the container
-        with st.container(height=900, border=False):
+        # Use a much larger height to maximize vertical space utilization
+        with st.container(height=1200, border=False):
             render_listing_selector(listings)
 
     listing_map = {listing.id: listing for listing in listings}
