@@ -1944,8 +1944,10 @@ def main():
 
     stats = db.get_stats()
     st.sidebar.caption(
-        f"已保存 {stats.get('available', 0)} 套可用房源。页面会先读本地保存结果，增量上新不会清空旧房源。"
+        f"存储：{db.storage_label()}。已保存 {stats.get('available', 0)} 套可用房源。页面会先读已保存结果，增量上新不会清空旧房源。"
     )
+    if not db.using_cloud_database:
+        st.sidebar.warning("当前不是共享云数据库；别人可能看不到你扫描保存的房源。请在 Streamlit Secrets 设置 DATABASE_URL。")
 
     if scan_clicked:
         with st.spinner("正在增量上新：保留已保存房源，只合并新房源和变动信息..."):

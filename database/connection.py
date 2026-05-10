@@ -24,6 +24,7 @@ class DatabaseManager:
         """
         self.db_path = db_path
         database_url = self._normalize_database_url(database_url)
+        self.using_cloud_database = bool(database_url)
         if database_url:
             self.engine = create_engine(database_url, echo=False, pool_pre_ping=True)
         else:
@@ -54,6 +55,12 @@ class DatabaseManager:
         if value.startswith("postgres://"):
             return value.replace("postgres://", "postgresql://", 1)
         return value
+
+    def storage_label(self) -> str:
+        """Return a user-facing label for the active storage backend."""
+        if self.using_cloud_database:
+            return "共享云数据库"
+        return "本地临时数据库"
 
     def _ensure_schema_updates(self):
         """Apply lightweight schema updates for SQLite installations."""
