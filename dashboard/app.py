@@ -255,12 +255,6 @@ st.markdown(
         color: var(--airbnb-muted);
         font-weight: 700;
     }
-    .review-layout [data-testid="column"]:first-child {
-        order: 2;
-    }
-    .review-layout [data-testid="column"]:nth-child(2) {
-        order: 1;
-    }
     .mobile-only {
         display: none;
     }
@@ -395,10 +389,6 @@ st.markdown(
         }
         .listing-card .stButton > button {
             min-height: 2.4rem;
-        }
-        .review-layout [data-testid="column"]:first-child,
-        .review-layout [data-testid="column"]:nth-child(2) {
-            order: initial;
         }
         .desktop-detail {
             display: none;
