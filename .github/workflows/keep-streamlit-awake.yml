@@ -1,8 +1,9 @@
 name: Keep Streamlit app awake
 
 on:
-  # Replaced by UptimeRobot (HTTP monitor every 5 min) — cron disabled.
-  # Keep workflow_dispatch for manual one-off wakes if needed.
+  schedule:
+    # Ping every 30 min — prevents Streamlit hibernation, stays within GitHub free tier.
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       app_url:
