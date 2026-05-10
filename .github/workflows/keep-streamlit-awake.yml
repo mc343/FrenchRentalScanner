@@ -1,7 +1,9 @@
 name: Keep Streamlit app awake
 
 on:
-  # Keep-awake handled by cron-job.org (every 15 min) — cron disabled here.
+  schedule:
+    # Every 2 hours — curl follows redirects so handles Streamlit's 303 correctly.
+    - cron: "0 */2 * * *"
   workflow_dispatch:
     inputs:
       app_url:
