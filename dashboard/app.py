@@ -210,6 +210,8 @@ st.markdown(
     }
     .photo-frame img {
         border-radius: 24px;
+        max-height: 72vh;
+        object-fit: contain;
     }
     .spec-grid {
         display: grid;
@@ -239,6 +241,14 @@ st.markdown(
         background: #fff;
         padding: 1rem;
         margin-top: 0.9rem;
+    }
+    .mobile-count {
+        min-height: 2.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--airbnb-muted);
+        font-weight: 700;
     }
     @media (max-width: 768px) {
         .block-container {
@@ -313,10 +323,38 @@ st.markdown(
         }
         .photo-frame img {
             border-radius: 16px;
+            max-height: 56vh;
         }
         .stButton > button,
         .stLinkButton > a {
             min-height: 2.75rem;
+        }
+        textarea {
+            min-height: 7rem !important;
+        }
+        div[data-testid="stMetric"] {
+            padding: 0.15rem 0;
+        }
+        div[data-testid="stMetricValue"] {
+            font-size: 1.05rem;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        div[data-testid="stMetricLabel"] {
+            white-space: normal;
+        }
+        .listing-card [data-testid="column"]:first-child {
+            min-width: 34% !important;
+            width: 34% !important;
+            flex: 0 0 34% !important;
+        }
+        .listing-card [data-testid="column"]:nth-child(2) {
+            min-width: 60% !important;
+            width: 60% !important;
+            flex: 1 1 60% !important;
+        }
+        .listing-card .stButton > button {
+            min-height: 2.4rem;
         }
         [data-testid="stTabs"] [role="tablist"] {
             overflow-x: auto;
@@ -478,6 +516,7 @@ def ensure_state():
     st.session_state.setdefault("selected_listing_id", None)
     st.session_state.setdefault("compare_ids", [])
     st.session_state.setdefault("listing_flash_message", None)
+    st.session_state.setdefault("listing_list_count", 20)
 
 
 def format_price(value):
@@ -1508,10 +1547,18 @@ def render_compare_strip(listings):
             st.markdown("</div>", unsafe_allow_html=True)
 
 
-def render_listing_selector(listings):
+def render_listing_selector(listings, visible_count=None):
     """Render the left-side browser and selection actions."""
     st.caption("选择一条房源查看")
-    for listing in listings:
+    if visible_count is None:
+        visible_count = len(listings)
+
+    visible_listings = list(listings[:visible_count])
+    selected_listing = next((listing for listing in listings if listing.id == st.session_state.selected_listing_id), None)
+    if selected_listing and selected_listing.id not in {listing.id for listing in visible_listings}:
+        visible_listings.insert(0, selected_listing)
+
+    for listing in visible_listings:
         st.markdown('<div class="listing-card">', unsafe_allow_html=True)
         preview_col, text_col = st.columns([0.9, 1.5], gap="small")
         with preview_col:
@@ -1547,6 +1594,12 @@ def render_listing_selector(listings):
                 toggle_compare(listing.id)
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+
+    if visible_count < len(listings):
+        remaining = len(listings) - visible_count
+        if st.button(f"显示更多（还剩 {remaining} 套）", key="show_more_listings", use_container_width=True):
+            st.session_state.listing_list_count = min(len(listings), visible_count + 20)
+            st.rerun()
 
 
 def render_photo_gallery(listing):
@@ -1690,6 +1743,31 @@ def render_listing_detail(db, listing):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
+def render_listing_navigation(listings):
+    """Render compact previous/next controls for narrow screens and quick review."""
+    current_index = next(
+        (idx for idx, listing in enumerate(listings) if listing.id == st.session_state.selected_listing_id),
+        0,
+    )
+    prev_index = max(0, current_index - 1)
+    next_index = min(len(listings) - 1, current_index + 1)
+
+    prev_col, count_col, next_col = st.columns([1, 1.2, 1])
+    with prev_col:
+        if st.button("上一套", use_container_width=True, disabled=current_index == 0):
+            st.session_state.selected_listing_id = listings[prev_index].id
+            st.rerun()
+    with count_col:
+        st.markdown(
+            f'<div class="mobile-count">{current_index + 1} / {len(listings)}</div>',
+            unsafe_allow_html=True,
+        )
+    with next_col:
+        if st.button("下一套", use_container_width=True, disabled=current_index >= len(listings) - 1):
+            st.session_state.selected_listing_id = listings[next_index].id
+            st.rerun()
+
+
 def render_listing_browser(db, listings):
     """Render the two-pane listing review experience."""
     st.subheader("房源复查")
@@ -1751,10 +1829,12 @@ def render_listing_browser(db, listings):
     selected_listing = listing_map[st.session_state.selected_listing_id]
     detail_col, list_col = st.columns([1.6, 1.05], gap="large")
     with detail_col:
+        render_listing_navigation(listings)
         render_listing_detail(db, selected_listing)
     with list_col:
         with st.container(border=False):
-            render_listing_selector(listings)
+            visible_count = min(st.session_state.listing_list_count, len(listings))
+            render_listing_selector(listings, visible_count=visible_count)
 
 
 def render_favorites(db):
@@ -1769,7 +1849,7 @@ def render_favorites(db):
         with st.expander(f"{translate_listing_title(listing.title)} | {format_price(listing.price)} | {availability_text(listing)}"):
             st.write(chinese_summary(listing))
             if listing.images:
-                st.image(listing.images[0], width=280)
+                st.image(listing.images[0], use_column_width=True)
             st.write(listing.review_notes or listing.description or "暂无备注或描述。")
 
 
