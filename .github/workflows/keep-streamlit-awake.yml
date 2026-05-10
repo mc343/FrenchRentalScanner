@@ -1,10 +1,8 @@
 name: Keep Streamlit app awake
 
 on:
-  schedule:
-    # Streamlit Community Cloud hibernates apps after about 12 hours without traffic.
-    # Visiting every 6 hours keeps the app warm without being noisy.
-    - cron: "17 */6 * * *"
+  # Replaced by UptimeRobot (HTTP monitor every 5 min) — cron disabled.
+  # Keep workflow_dispatch for manual one-off wakes if needed.
   workflow_dispatch:
     inputs:
       app_url:
