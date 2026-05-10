@@ -42,10 +42,16 @@ jobs:
 
           echo "app_url=$app_url" >> "$GITHUB_OUTPUT"
 
-      - name: Visit app
+      - name: Visit Streamlit app
         shell: bash
         run: |
           curl --fail --location --retry 3 --retry-delay 10 --retry-all-errors --max-time 60 \
             --cookie-jar streamlit-cookies.txt --cookie streamlit-cookies.txt \
             --user-agent "GitHubActions-Streamlit-KeepAwake/1.0" \
             "${{ steps.config.outputs.app_url }}"
+
+      - name: Ping Supabase algobanana
+        shell: bash
+        run: |
+          curl --fail --retry 3 --retry-delay 5 --max-time 30 \
+            https://kagurydrlvbjwlthcvlt.supabase.co/health
