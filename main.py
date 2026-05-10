@@ -116,7 +116,7 @@ def dedupe_listings(listings: List[Dict]) -> List[Dict]:
     return list(deduped.values())
 
 
-def run_scan(filters: dict = None, sources: list = None) -> dict:
+def run_scan(filters: dict = None, sources: list = None, reconcile_inventory: bool = True) -> dict:
     """Run scans for the selected websites and persist results."""
     filters = filters or default_filters()
     selected_sources = sources or ACTIVE_SOURCES
@@ -150,7 +150,7 @@ def run_scan(filters: dict = None, sources: list = None) -> dict:
     stored_count = store_summary["stored_count"]
 
     scan_city = str(filters.get("location") or "").strip()
-    if scan_city:
+    if reconcile_inventory and scan_city:
         for source in selected_sources:
             source_result = per_source_results.get(source, {})
             if source_result.get("error") or int(source_result.get("count") or 0) == 0:

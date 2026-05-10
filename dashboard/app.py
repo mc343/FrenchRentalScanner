@@ -1140,7 +1140,7 @@ def score_badges(listing):
 
 def scan_from_dashboard(filters, sources):
     """Run a scan and return status text."""
-    result = run_scan(filters, sources=sources)
+    result = run_scan(filters, sources=sources, reconcile_inventory=False)
     parts = []
     has_error = False
     for source in result["sources"]:
@@ -1150,6 +1150,8 @@ def scan_from_dashboard(filters, sources):
             parts.append(f"{source}: 失败 - {source_result['error']}")
         else:
             parts.append(f"{source}: {source_result.get('count', 0)} 条")
+    parts.append(f"新增 {result.get('new_count', 0)} 条")
+    parts.append(f"更新 {result.get('updated_count', 0)} 条")
     return result, " | ".join(parts), has_error
 
 
@@ -1411,7 +1413,8 @@ def build_filters(sidebar_defaults):
         need_elevator = st.checkbox("只看提到电梯的房源", value=False)
 
         st.divider()
-        scan_clicked = st.button("扫描房源", type="primary", use_container_width=True)
+        st.caption("打开页面只读取已保存房源；点击这里才会联网增量上新。")
+        scan_clicked = st.button("增量上新", type="primary", use_container_width=True)
 
     db_filters = {
         "city": city if city else None,
@@ -1934,16 +1937,23 @@ def main():
     db_filters, scan_filters, selected_sources, scan_clicked, ui_filters = build_filters(defaults)
     render_manual_add_panel(db)
 
+    stats = db.get_stats()
+    st.sidebar.caption(
+        f"已保存 {stats.get('available', 0)} 套可用房源。页面会先读本地保存结果，增量上新不会清空旧房源。"
+    )
+
     if scan_clicked:
-        with st.spinner("正在扫描房源..."):
+        with st.spinner("正在增量上新：保留已保存房源，只合并新房源和变动信息..."):
             result, status_text, has_error = scan_from_dashboard(scan_filters, selected_sources)
         if has_error:
-            st.sidebar.error("扫描时有部分请求失败。")
-            st.sidebar.info("系统已保留成功返回的房源，你也可以继续手动补充。")
+            st.sidebar.error("增量上新时有部分请求失败。")
+            st.sidebar.info("已保存房源不会被清空；系统只合并成功返回的新房源。")
         elif result["stored_count"] == 0:
-            st.sidebar.warning("扫描完成，但没有符合当前筛选条件的房源。")
+            st.sidebar.info("增量上新完成：没有发现新房源，已保存房源继续保留。")
         else:
-            st.sidebar.success(f"扫描完成，已新增或更新 {result['stored_count']} 条房源。")
+            st.sidebar.success(
+                f"增量上新完成：新增 {result.get('new_count', 0)} 条，更新 {result.get('updated_count', 0)} 条。"
+            )
         st.sidebar.caption(status_text)
 
     stats = db.get_stats()
