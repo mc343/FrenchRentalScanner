@@ -1807,7 +1807,16 @@ def render_mobile_inline_detail(listing):
     render_spec_grid(listing)
     if listing.images:
         st.markdown('<div class="photo-frame">', unsafe_allow_html=True)
-        st.image(listing.images[0], use_column_width=True)
+        if len(listing.images) > 1:
+            image_index = st.selectbox(
+                "照片",
+                options=list(range(len(listing.images))),
+                format_func=lambda idx: f"照片 {idx + 1} / {len(listing.images)}",
+                key=f"mobile_photo_{listing.id}",
+            )
+        else:
+            image_index = 0
+        st.image(listing.images[image_index], use_column_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     st.write(translate_description_text(listing.description))
     if listing.url:
