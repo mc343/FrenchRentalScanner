@@ -9,6 +9,7 @@ import sys
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as stc
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -392,6 +393,9 @@ st.markdown(
         }
         .desktop-detail {
             display: none;
+        }
+        [data-testid="column"]:has(.desktop-detail) {
+            display: none !important;
         }
         .mobile-only {
             display: block;
@@ -1654,31 +1658,129 @@ def render_listing_selector(listings, visible_count=None):
             st.rerun()
 
 
+def render_swipe_gallery(images, uid, height=370):
+    """Render a touch-swipeable photo carousel via an HTML component.
+
+    Works on mobile (touch swipe left/right) and desktop (arrow buttons).
+    ``uid`` must be unique per listing on the page to avoid JS conflicts.
+    """
+    if not images:
+        return
+    imgs_js = json.dumps(images)
+    safe = str(uid).replace("-", "_")
+    html = f"""
+<style>
+  body {{ margin:0; background:transparent; }}
+  #wrap_{safe} {{
+    position: relative;
+    width: 100%;
+    font-family: sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+  }}
+  #imgbox_{safe} {{
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+  }}
+  #photo_{safe} {{
+    width: 100%;
+    max-height: 340px;
+    object-fit: contain;
+    display: block;
+    transition: opacity 0.15s;
+  }}
+  #controls_{safe} {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    gap: 4px;
+  }}
+  #controls_{safe} button {{
+    background: rgba(255,90,95,0.15);
+    border: none;
+    border-radius: 8px;
+    color: #ff5a5f;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 4px 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }}
+  #controls_{safe} button:active {{ background: rgba(255,90,95,0.3); }}
+  #counter_{safe} {{
+    font-size: 0.82rem;
+    color: #888;
+    text-align: center;
+    flex: 1;
+  }}
+</style>
+<div id="wrap_{safe}">
+  <div id="imgbox_{safe}">
+    <img id="photo_{safe}" src="" alt="照片" onerror="this.style.opacity='0.3'">
+  </div>
+  <div id="controls_{safe}">
+    <button onclick="prevPhoto_{safe}()">&#8249;</button>
+    <span id="counter_{safe}">1 / {len(images)}</span>
+    <button onclick="nextPhoto_{safe}()">&#8250;</button>
+  </div>
+</div>
+<script>
+(function() {{
+  var imgs = {imgs_js};
+  var idx = 0;
+  var el = document.getElementById('wrap_{safe}');
+  var imgEl = document.getElementById('photo_{safe}');
+  var ctr = document.getElementById('counter_{safe}');
+
+  function show(i) {{
+    idx = ((i % imgs.length) + imgs.length) % imgs.length;
+    imgEl.style.opacity = '0.5';
+    imgEl.src = imgs[idx];
+    imgEl.onload = function() {{ imgEl.style.opacity = '1'; }};
+    ctr.textContent = (idx + 1) + ' / ' + imgs.length;
+  }}
+
+  window['prevPhoto_{safe}'] = function() {{ show(idx - 1); }};
+  window['nextPhoto_{safe}'] = function() {{ show(idx + 1); }};
+
+  // Touch swipe
+  var startX = 0;
+  el.addEventListener('touchstart', function(e) {{
+    startX = e.touches[0].clientX;
+  }}, {{passive: true}});
+  el.addEventListener('touchend', function(e) {{
+    var dx = e.changedTouches[0].clientX - startX;
+    if (dx > 40) show(idx - 1);
+    else if (dx < -40) show(idx + 1);
+  }}, {{passive: true}});
+
+  // Keyboard arrows when focused
+  el.setAttribute('tabindex', '0');
+  el.addEventListener('keydown', function(e) {{
+    if (e.key === 'ArrowLeft') show(idx - 1);
+    if (e.key === 'ArrowRight') show(idx + 1);
+  }});
+
+  show(0);
+}})();
+</script>
+"""
+    stc.html(html, height=height, scrolling=False)
+
+
 def render_photo_gallery(listing):
     """Render photo gallery for selected listing."""
     if not listing.images:
         st.info("这条房源目前没有保存到照片。")
         return
-
-    st.markdown('<div class="photo-frame">', unsafe_allow_html=True)
-    image_index = st.selectbox(
-        "照片",
-        options=list(range(len(listing.images))),
-        format_func=lambda idx: f"照片 {idx + 1} / {len(listing.images)}",
-        key=f"photo_{listing.id}",
-    )
-    st.image(listing.images[image_index], use_column_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    if len(listing.images) > 1:
-        thumb_count = min(5, len(listing.images))
-        thumb_cols = st.columns(thumb_count)
-        start = max(0, min(image_index, len(listing.images) - thumb_count))
-        visible = listing.images[start:start + thumb_count]
-        for idx, col in enumerate(thumb_cols):
-            if idx >= len(visible):
-                break
-            with col:
-                st.image(visible[idx], use_column_width=True)
+    render_swipe_gallery(listing.images, uid=f"desk_{listing.id}")
 
 
 def render_review_editor(db, listing):
@@ -1806,18 +1908,7 @@ def render_mobile_inline_detail(listing):
     st.markdown(f'<div class="zh-summary"><strong>中文摘要</strong><br>{chinese_summary(listing)}</div>', unsafe_allow_html=True)
     render_spec_grid(listing)
     if listing.images:
-        st.markdown('<div class="photo-frame">', unsafe_allow_html=True)
-        if len(listing.images) > 1:
-            image_index = st.selectbox(
-                "照片",
-                options=list(range(len(listing.images))),
-                format_func=lambda idx: f"照片 {idx + 1} / {len(listing.images)}",
-                key=f"mobile_photo_{listing.id}",
-            )
-        else:
-            image_index = 0
-        st.image(listing.images[image_index], use_column_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        render_swipe_gallery(listing.images, uid=f"mob_{listing.id}", height=340)
     st.write(translate_description_text(listing.description))
     if listing.url:
         st.markdown(f"[打开原始房源]({listing.url})")
