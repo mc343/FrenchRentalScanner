@@ -34,7 +34,7 @@ st.set_page_config(
     page_title="French Rental Scanner",
     page_icon="🏠",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
@@ -239,6 +239,92 @@ st.markdown(
         background: #fff;
         padding: 1rem;
         margin-top: 0.9rem;
+    }
+    @media (max-width: 768px) {
+        .block-container {
+            padding: 0.75rem 0.75rem 4rem 0.75rem;
+        }
+        [data-testid="stSidebar"] {
+            min-width: min(92vw, 24rem);
+            max-width: min(92vw, 24rem);
+        }
+        [data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+        .hero-panel {
+            padding: 0.95rem;
+            border-radius: 18px;
+            margin-bottom: 0.8rem;
+        }
+        .soft-kicker {
+            font-size: 0.76rem;
+            margin-bottom: 0.4rem;
+        }
+        .main-header {
+            font-size: 1.85rem;
+            line-height: 1.12;
+        }
+        .sub-header {
+            font-size: 0.92rem;
+        }
+        .stat-card {
+            border-radius: 16px;
+            padding: 0.7rem 0.8rem;
+            margin-bottom: 0.45rem;
+        }
+        .listing-scroll-panel {
+            max-height: none;
+            overflow: visible;
+            padding-right: 0;
+        }
+        .listing-card {
+            border-radius: 16px;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .listing-thumb img,
+        .listing-thumb-empty {
+            border-radius: 14px;
+        }
+        .badge-chip {
+            font-size: 0.74rem;
+            padding: 0.2rem 0.5rem;
+            margin: 0 0.28rem 0.3rem 0;
+        }
+        .detail-shell {
+            border-radius: 18px;
+            padding: 0.8rem;
+        }
+        .detail-block,
+        .compare-card,
+        .zh-summary {
+            border-radius: 16px;
+            padding: 0.8rem;
+        }
+        .spec-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.55rem;
+        }
+        .spec-card {
+            border-radius: 14px;
+            padding: 0.65rem;
+        }
+        .photo-frame img {
+            border-radius: 16px;
+        }
+        .stButton > button,
+        .stLinkButton > a {
+            min-height: 2.75rem;
+        }
+        [data-testid="stTabs"] [role="tablist"] {
+            overflow-x: auto;
+            flex-wrap: nowrap;
+        }
+        [data-testid="stTabs"] [role="tab"] {
+            min-width: max-content;
+        }
     }
 </style>
 """,
@@ -1661,15 +1747,14 @@ def render_listing_browser(db, listings):
 
     render_compare_strip(listings)
 
-    left_col, right_col = st.columns([1.05, 1.6], gap="large")
-    with left_col:
-        with st.container(height=980, border=False):
-            render_listing_selector(listings)
-
     listing_map = {listing.id: listing for listing in listings}
     selected_listing = listing_map[st.session_state.selected_listing_id]
-    with right_col:
+    detail_col, list_col = st.columns([1.6, 1.05], gap="large")
+    with detail_col:
         render_listing_detail(db, selected_listing)
+    with list_col:
+        with st.container(border=False):
+            render_listing_selector(listings)
 
 
 def render_favorites(db):

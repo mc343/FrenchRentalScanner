@@ -1,0 +1,50 @@
+name: Keep Streamlit app awake
+
+on:
+  schedule:
+    # Streamlit Community Cloud hibernates apps after about 12 hours without traffic.
+    # Visiting every 6 hours keeps the app warm without being noisy.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "Optional Streamlit app URL for this manual run"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-streamlit-awake
+  cancel-in-progress: true
+
+jobs:
+  visit:
+    name: Visit Streamlit app
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Resolve app URL
+        id: config
+        shell: bash
+        env:
+          INPUT_APP_URL: ${{ github.event.inputs.app_url }}
+          STREAMLIT_APP_URL: ${{ vars.STREAMLIT_APP_URL }}
+        run: |
+          app_url="${INPUT_APP_URL:-$STREAMLIT_APP_URL}"
+
+          if [ -z "$app_url" ]; then
+            echo "::error::Set the repository variable STREAMLIT_APP_URL to your Streamlit Community Cloud URL, or provide app_url when running this workflow manually."
+            exit 1
+          fi
+
+          echo "app_url=$app_url" >> "$GITHUB_OUTPUT"
+
+      - name: Visit app
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 --retry-delay 10 --retry-all-errors --max-time 60 \
+            --user-agent "GitHubActions-Streamlit-KeepAwake/1.0" \
+            "${{ steps.config.outputs.app_url }}"
