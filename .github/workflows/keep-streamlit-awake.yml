@@ -32,11 +32,12 @@ jobs:
         env:
           INPUT_APP_URL: ${{ github.event.inputs.app_url }}
           STREAMLIT_APP_URL: ${{ vars.STREAMLIT_APP_URL }}
+          DEFAULT_APP_URL: https://frenchrental.streamlit.app/
         run: |
-          app_url="${INPUT_APP_URL:-$STREAMLIT_APP_URL}"
+          app_url="${INPUT_APP_URL:-${STREAMLIT_APP_URL:-$DEFAULT_APP_URL}}"
 
           if [ -z "$app_url" ]; then
-            echo "::error::Set the repository variable STREAMLIT_APP_URL to your Streamlit Community Cloud URL, or provide app_url when running this workflow manually."
+            echo "::error::Set DEFAULT_APP_URL in this workflow, set the repository variable STREAMLIT_APP_URL, or provide app_url when running this workflow manually."
             exit 1
           fi
 
@@ -46,5 +47,6 @@ jobs:
         shell: bash
         run: |
           curl --fail --location --retry 3 --retry-delay 10 --retry-all-errors --max-time 60 \
+            --cookie-jar streamlit-cookies.txt --cookie streamlit-cookies.txt \
             --user-agent "GitHubActions-Streamlit-KeepAwake/1.0" \
             "${{ steps.config.outputs.app_url }}"
