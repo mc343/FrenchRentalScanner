@@ -21,7 +21,12 @@ from url_scraper import URLScraper
 @st.cache_resource
 def init_db():
     """Initialize database connection."""
-    return DatabaseManager("rental_listings.db")
+    database_url = os.getenv("DATABASE_URL")
+    try:
+        database_url = st.secrets.get("DATABASE_URL", database_url)
+    except Exception:
+        pass
+    return DatabaseManager("rental_listings.db", database_url=database_url)
 
 
 @st.cache_resource

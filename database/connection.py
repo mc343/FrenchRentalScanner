@@ -15,18 +15,23 @@ from .models import Base, Listing, SearchHistory, ViewingNote
 class DatabaseManager:
     """Manages database operations for rental listings"""
 
-    def __init__(self, db_path: str = "rental_listings.db"):
+    def __init__(self, db_path: str = "rental_listings.db", database_url: str = None):
         """Initialize database connection
 
         Args:
             db_path: Path to SQLite database file
+            database_url: Optional SQLAlchemy database URL for shared cloud storage
         """
         self.db_path = db_path
-        self.engine = create_engine(
-            f'sqlite:///{db_path}',
-            echo=False,
-            connect_args={'check_same_thread': False}
-        )
+        database_url = self._normalize_database_url(database_url)
+        if database_url:
+            self.engine = create_engine(database_url, echo=False, pool_pre_ping=True)
+        else:
+            self.engine = create_engine(
+                f'sqlite:///{db_path}',
+                echo=False,
+                connect_args={'check_same_thread': False}
+            )
         self.SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,
@@ -38,7 +43,17 @@ class DatabaseManager:
     def init_db(self):
         """Create all tables if they don't exist"""
         Base.metadata.create_all(bind=self.engine)
-        self._ensure_schema_updates()
+        if self.engine.dialect.name == "sqlite":
+            self._ensure_schema_updates()
+
+    def _normalize_database_url(self, database_url: str = None) -> Optional[str]:
+        """Normalize cloud database URLs for SQLAlchemy."""
+        value = (database_url or "").strip()
+        if not value:
+            return None
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql://", 1)
+        return value
 
     def _ensure_schema_updates(self):
         """Apply lightweight schema updates for SQLite installations."""

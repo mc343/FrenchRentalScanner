@@ -121,7 +121,7 @@ def run_scan(filters: dict = None, sources: list = None, reconcile_inventory: bo
     filters = filters or default_filters()
     selected_sources = sources or ACTIVE_SOURCES
 
-    db = DatabaseManager(DEFAULT_DB_PATH)
+    db = DatabaseManager(DEFAULT_DB_PATH, database_url=os.getenv("DATABASE_URL"))
     raw_listings = []
     per_source_results = {}
 
@@ -227,7 +227,7 @@ def scan_listings(filters: dict = None, sources: list = None):
 
 def show_stats():
     """Show database statistics."""
-    db = DatabaseManager(DEFAULT_DB_PATH)
+    db = DatabaseManager(DEFAULT_DB_PATH, database_url=os.getenv("DATABASE_URL"))
     stats = db.get_stats()
 
     print("Database Statistics")
