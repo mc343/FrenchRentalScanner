@@ -1679,6 +1679,7 @@ def render_swipe_gallery(images, uid, height=370):
     -webkit-user-select: none;
   }}
   #imgbox_{safe} {{
+    position: relative;
     width: 100%;
     border-radius: 12px;
     overflow: hidden;
@@ -1695,40 +1696,52 @@ def render_swipe_gallery(images, uid, height=370):
     display: block;
     transition: opacity 0.15s;
   }}
-  #controls_{safe} {{
+  /* Counter pill — top centre, always on top of image */
+  #counter_{safe} {{
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    font-size: 0.78rem;
+    padding: 2px 10px;
+    border-radius: 20px;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 10;
+  }}
+  /* Arrow buttons — vertically centred on image sides */
+  .arr_{safe} {{
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0,0,0,0.45);
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 1.5rem;
+    line-height: 1;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-top: 6px;
-    gap: 4px;
-  }}
-  #controls_{safe} button {{
-    background: rgba(255,90,95,0.15);
-    border: none;
-    border-radius: 8px;
-    color: #ff5a5f;
-    font-size: 1.4rem;
-    line-height: 1;
-    padding: 4px 14px;
+    justify-content: center;
     cursor: pointer;
-    flex-shrink: 0;
+    z-index: 10;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
   }}
-  #controls_{safe} button:active {{ background: rgba(255,90,95,0.3); }}
-  #counter_{safe} {{
-    font-size: 0.82rem;
-    color: #888;
-    text-align: center;
-    flex: 1;
-  }}
+  .arr_{safe}:active {{ background: rgba(0,0,0,0.7); }}
+  #prev_{safe} {{ left: 8px; }}
+  #next_{safe} {{ right: 8px; }}
 </style>
 <div id="wrap_{safe}">
   <div id="imgbox_{safe}">
     <img id="photo_{safe}" src="" alt="照片" onerror="this.style.opacity='0.3'">
-  </div>
-  <div id="controls_{safe}">
-    <button onclick="prevPhoto_{safe}()">&#8249;</button>
     <span id="counter_{safe}">1 / {len(images)}</span>
-    <button onclick="nextPhoto_{safe}()">&#8250;</button>
+    <button id="prev_{safe}" class="arr_{safe}" onclick="prevPhoto_{safe}()">&#8249;</button>
+    <button id="next_{safe}" class="arr_{safe}" onclick="nextPhoto_{safe}()">&#8250;</button>
   </div>
 </div>
 <script>
@@ -1767,6 +1780,14 @@ def render_swipe_gallery(images, uid, height=370):
     if (e.key === 'ArrowLeft') show(idx - 1);
     if (e.key === 'ArrowRight') show(idx + 1);
   }});
+
+  // Hide arrows when there is only one image
+  if (imgs.length <= 1) {{
+    var p = document.getElementById('prev_{safe}');
+    var n = document.getElementById('next_{safe}');
+    if (p) p.style.display = 'none';
+    if (n) n.style.display = 'none';
+  }}
 
   show(0);
 }})();
