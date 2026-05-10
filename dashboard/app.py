@@ -1632,7 +1632,7 @@ def render_listing_selector(listings, visible_count=None):
             st.caption(listing.source)
         btn1, btn2 = st.columns(2)
         with btn1:
-            label = "查看中" if st.session_state.selected_listing_id == listing.id else "打开"
+            label = "查看中" if (st.session_state.detail_open and st.session_state.selected_listing_id == listing.id) else "打开"
             if st.button(label, key=f"select_{listing.id}", use_container_width=True):
                 st.session_state.selected_listing_id = listing.id
                 st.session_state.detail_open = True
@@ -1956,8 +1956,11 @@ def render_listing_browser(db, listings):
         st.info("当前没有符合条件的房源，请先扫描 Huningue 或 Mulhouse。")
         return
 
-    if st.session_state.selected_listing_id is None or st.session_state.selected_listing_id not in {listing.id for listing in listings}:
-        st.session_state.selected_listing_id = listings[0].id
+    valid_ids = {listing.id for listing in listings}
+    if st.session_state.selected_listing_id is not None and st.session_state.selected_listing_id not in valid_ids:
+        # Previously selected listing is no longer in the filtered list — clear selection
+        st.session_state.selected_listing_id = None
+        st.session_state.detail_open = False
 
     stale_threshold_label = st.selectbox("批量刷新阈值", list(STALE_REFRESH_OPTIONS.keys()), format_func=lambda v: {
         "Older than 6 hours": "超过 6 小时",
@@ -2007,7 +2010,7 @@ def render_listing_browser(db, listings):
     render_compare_strip(listings)
 
     listing_map = {listing.id: listing for listing in listings}
-    selected_listing = listing_map[st.session_state.selected_listing_id]
+    selected_listing = listing_map.get(st.session_state.selected_listing_id)
     st.markdown('<div class="review-layout">', unsafe_allow_html=True)
     list_col, detail_col = st.columns([1.05, 1.6], gap="large")
     with list_col:
@@ -2015,7 +2018,8 @@ def render_listing_browser(db, listings):
         render_listing_selector(listings, visible_count=visible_count)
     with detail_col:
         st.markdown('<div class="desktop-detail">', unsafe_allow_html=True)
-        render_selected_listing_detail(db, listings, selected_listing)
+        if selected_listing and st.session_state.detail_open:
+            render_selected_listing_detail(db, listings, selected_listing)
         st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
