@@ -261,6 +261,9 @@ st.markdown(
     .review-layout [data-testid="column"]:nth-child(2) {
         order: 1;
     }
+    .mobile-only {
+        display: none;
+    }
     @media (max-width: 768px) {
         .block-container {
             padding: 0.75rem 0.75rem 4rem 0.75rem;
@@ -396,6 +399,12 @@ st.markdown(
         .review-layout [data-testid="column"]:first-child,
         .review-layout [data-testid="column"]:nth-child(2) {
             order: initial;
+        }
+        .desktop-detail {
+            display: none;
+        }
+        .mobile-only {
+            display: block;
         }
         [data-testid="stTabs"] [role="tablist"] {
             overflow-x: auto;
@@ -558,6 +567,7 @@ def ensure_state():
     st.session_state.setdefault("compare_ids", [])
     st.session_state.setdefault("listing_flash_message", None)
     st.session_state.setdefault("listing_list_count", 20)
+    st.session_state.setdefault("detail_open", False)
 
 
 def format_price(value):
@@ -1631,6 +1641,7 @@ def render_listing_selector(listings, visible_count=None):
             label = "查看中" if st.session_state.selected_listing_id == listing.id else "打开"
             if st.button(label, key=f"select_{listing.id}", use_container_width=True):
                 st.session_state.selected_listing_id = listing.id
+                st.session_state.detail_open = True
                 st.rerun()
         with btn2:
             compare_label = "已加入对比" if listing.id in st.session_state.compare_ids else "加入对比"
@@ -1812,6 +1823,15 @@ def render_listing_navigation(listings):
             st.rerun()
 
 
+def render_selected_listing_detail(db, listings, listing):
+    """Render controls and detail for the currently selected listing."""
+    render_listing_navigation(listings)
+    if st.button("收起详情", key="collapse_detail", use_container_width=True):
+        st.session_state.detail_open = False
+        st.rerun()
+    render_listing_detail(db, listing)
+
+
 def render_listing_browser(db, listings):
     """Render the two-pane listing review experience."""
     st.subheader("房源复查")
@@ -1876,9 +1896,14 @@ def render_listing_browser(db, listings):
     with list_col:
         visible_count = min(st.session_state.listing_list_count, len(listings))
         render_listing_selector(listings, visible_count=visible_count)
+        if st.session_state.detail_open:
+            st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
+            render_selected_listing_detail(db, listings, selected_listing)
+            st.markdown('</div>', unsafe_allow_html=True)
     with detail_col:
-        render_listing_navigation(listings)
-        render_listing_detail(db, selected_listing)
+        st.markdown('<div class="desktop-detail">', unsafe_allow_html=True)
+        render_selected_listing_detail(db, listings, selected_listing)
+        st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 
