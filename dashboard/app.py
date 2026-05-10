@@ -1638,6 +1638,13 @@ def render_listing_selector(listings, visible_count=None):
             if st.button(compare_label, key=f"compare_{listing.id}", use_container_width=True):
                 toggle_compare(listing.id)
                 st.rerun()
+        if st.session_state.detail_open and st.session_state.selected_listing_id == listing.id:
+            st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
+            if st.button("收起详情", key=f"collapse_inline_{listing.id}", use_container_width=True):
+                st.session_state.detail_open = False
+                st.rerun()
+            render_mobile_inline_detail(listing)
+            st.markdown('</div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     if visible_count < len(listings):
@@ -1788,6 +1795,26 @@ def render_listing_detail(db, listing):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
+def render_mobile_inline_detail(listing):
+    """Render a compact read-only detail block inside a selected mobile card."""
+    st.markdown('<div class="detail-block">', unsafe_allow_html=True)
+    st.markdown(f"### {translate_listing_title(listing.title)}")
+    st.markdown(
+        f'<div class="detail-topline">{listing.source} | {listing.location or listing.city or "位置未知"} | {format_price(listing.price)} | {format_area(listing.area)}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(f'<div class="zh-summary"><strong>中文摘要</strong><br>{chinese_summary(listing)}</div>', unsafe_allow_html=True)
+    render_spec_grid(listing)
+    if listing.images:
+        st.markdown('<div class="photo-frame">', unsafe_allow_html=True)
+        st.image(listing.images[0], use_column_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.write(translate_description_text(listing.description))
+    if listing.url:
+        st.markdown(f"[打开原始房源]({listing.url})")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def render_listing_navigation(listings):
     """Render compact previous/next controls for narrow screens and quick review."""
     current_index = next(
@@ -1886,10 +1913,6 @@ def render_listing_browser(db, listings):
     with list_col:
         visible_count = min(st.session_state.listing_list_count, len(listings))
         render_listing_selector(listings, visible_count=visible_count)
-        if st.session_state.detail_open:
-            st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
-            render_selected_listing_detail(db, listings, selected_listing)
-            st.markdown('</div>', unsafe_allow_html=True)
     with detail_col:
         st.markdown('<div class="desktop-detail">', unsafe_allow_html=True)
         render_selected_listing_detail(db, listings, selected_listing)
