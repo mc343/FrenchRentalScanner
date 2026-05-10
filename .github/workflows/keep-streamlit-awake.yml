@@ -1,9 +1,7 @@
 name: Keep Streamlit app awake
 
 on:
-  schedule:
-    # Ping every 30 min — prevents Streamlit hibernation, stays within GitHub free tier.
-    - cron: "*/30 * * * *"
+  # Keep-awake handled by cron-job.org (every 15 min) — cron disabled here.
   workflow_dispatch:
     inputs:
       app_url:
