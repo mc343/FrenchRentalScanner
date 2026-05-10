@@ -260,8 +260,34 @@ st.markdown(
             padding: 0.75rem 0.75rem 4rem 0.75rem;
         }
         [data-testid="stSidebar"] {
-            min-width: min(92vw, 24rem);
-            max-width: min(92vw, 24rem);
+            min-width: 0 !important;
+            width: min(82vw, 20rem) !important;
+            max-width: min(82vw, 20rem) !important;
+            box-shadow: 10px 0 30px rgba(47, 31, 31, 0.16);
+        }
+        [data-testid="stSidebar"] > div {
+            width: min(82vw, 20rem) !important;
+            max-width: min(82vw, 20rem) !important;
+            max-height: 100dvh;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding-bottom: 5rem;
+        }
+        [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+            padding: 1rem 0.9rem 5rem 0.9rem;
+        }
+        [data-testid="stSidebarCollapsedControl"] {
+            left: 0.45rem;
+            top: 0.45rem;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid var(--airbnb-line);
+            border-radius: 999px;
+            box-shadow: 0 6px 18px rgba(47, 31, 31, 0.12);
+        }
+        [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
+            position: sticky;
+            top: 0.25rem;
+            z-index: 5;
         }
         [data-testid="column"] {
             width: 100% !important;

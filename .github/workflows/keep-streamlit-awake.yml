@@ -32,7 +32,7 @@ jobs:
         env:
           INPUT_APP_URL: ${{ github.event.inputs.app_url }}
           STREAMLIT_APP_URL: ${{ vars.STREAMLIT_APP_URL }}
-          DEFAULT_APP_URL: https://frenchrental.streamlit.app/
+          DEFAULT_APP_URL: https://frenchrentals.streamlit.app/
         run: |
           app_url="${INPUT_APP_URL:-${STREAMLIT_APP_URL:-$DEFAULT_APP_URL}}"
 
