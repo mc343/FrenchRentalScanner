@@ -255,6 +255,12 @@ st.markdown(
         color: var(--airbnb-muted);
         font-weight: 700;
     }
+    .review-layout [data-testid="column"]:first-child {
+        order: 2;
+    }
+    .review-layout [data-testid="column"]:nth-child(2) {
+        order: 1;
+    }
     @media (max-width: 768px) {
         .block-container {
             padding: 0.75rem 0.75rem 4rem 0.75rem;
@@ -386,6 +392,10 @@ st.markdown(
         }
         .listing-card .stButton > button {
             min-height: 2.4rem;
+        }
+        .review-layout [data-testid="column"]:first-child,
+        .review-layout [data-testid="column"]:nth-child(2) {
+            order: initial;
         }
         [data-testid="stTabs"] [role="tablist"] {
             overflow-x: auto;
@@ -1861,14 +1871,15 @@ def render_listing_browser(db, listings):
 
     listing_map = {listing.id: listing for listing in listings}
     selected_listing = listing_map[st.session_state.selected_listing_id]
-    detail_col, list_col = st.columns([1.6, 1.05], gap="large")
+    st.markdown('<div class="review-layout">', unsafe_allow_html=True)
+    list_col, detail_col = st.columns([1.05, 1.6], gap="large")
+    with list_col:
+        visible_count = min(st.session_state.listing_list_count, len(listings))
+        render_listing_selector(listings, visible_count=visible_count)
     with detail_col:
         render_listing_navigation(listings)
         render_listing_detail(db, selected_listing)
-    with list_col:
-        with st.container(border=False):
-            visible_count = min(st.session_state.listing_list_count, len(listings))
-            render_listing_selector(listings, visible_count=visible_count)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_favorites(db):
